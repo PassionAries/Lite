@@ -9,7 +9,7 @@ Lite 是一款轻量、自托管的服务器监控与运维管理工具。服务
 
 本项目基于 [komari-monitor/komari](https://github.com/komari-monitor/komari) 持续开发，重点改善低配置主控上的数据库占用、历史查询和维护负载，同时提供流量管理、成本中心、备份迁移、接入安全与适配电脑和手机的管理界面。
 
-**当前正式版：Lite [`2.3.7`](https://github.com/nuomiiiii/Lite/releases/tag/2.3.7) · 配套 Agent [`2.3.6.0`](https://github.com/nuomiiiii/Lite-agent/releases/tag/2.3.6.0) · 默认主题 [`1.2.4`](https://github.com/nuomiiiii/Lite-theme/releases/tag/v1.2.4)**
+**当前正式版：Lite [`2.3.7`](https://github.com/nuomiiiii/Lite/releases/tag/2.3.7) · 配套 Agent [`2.3.6.0`](https://github.com/nuomiiiii/Lite-agent/releases/tag/2.3.6.0) · 默认主题 [`1.2.8`](https://github.com/nuomiiiii/Lite-theme/releases/tag/v1.2.8)**
 
 [使用手册](https://nuomiiiii.github.io/Lite-document/) · [快速开始](#快速开始) · [功能概览](#功能概览) · [升级说明](#从旧版本升级) · [Agent](#agent-与远程管理) · [MCP 代理](#mcp-代理与-ai-授权) · [完整更新日志](https://github.com/nuomiiiii/lite/releases)
 
