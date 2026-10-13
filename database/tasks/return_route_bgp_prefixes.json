@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-13T06:51:19.653971Z",
+  "generated_at": "2026-10-13T16:04:16.592446Z",
   "source": "bgp.tools/table.jsonl + maintained overrides",
   "prefix_groups": {
     "cmin2": [
@@ -469,7 +469,7 @@
       "240e:699:bc00::/38",
       "240e:6a0:d00::/48",
       "240e:6a0:d03::/48",
-      "240e:6a0:d04::/48",
+      "240e:6a0:d04::/47",
       "240e:6a0:d07::/48",
       "240e:6a0:d0a::/48",
       "240e:713:f020::/47",
