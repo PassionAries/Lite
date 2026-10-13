@@ -16,7 +16,6 @@ import (
 	"github.com/nuomiiiii/lite/database/tasks"
 	"github.com/nuomiiiii/lite/pkg/config"
 	"github.com/nuomiiiii/lite/pkg/rpc"
-	"github.com/nuomiiiii/lite/pkg/themehttp"
 	v2 "github.com/nuomiiiii/lite/protocol/v2"
 	logger "github.com/nuomiiiii/lite/utils/log"
 	"github.com/nuomiiiii/lite/utils/messageSender"
@@ -225,13 +224,6 @@ func adminEditSettings(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.
 		}
 		cfg[config.SessionTTLSecondsKey] = ttl
 	}
-	if rawProxy, ok := cfg[config.GitHubProxyKey]; ok {
-		normalized, err := normalizeGitHubProxySetting(rawProxy)
-		if err != nil {
-			return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
-		}
-		cfg[config.GitHubProxyKey] = normalized
-	}
 	// Ignore retired controls submitted by an older cached frontend. The
 	// startup normalizer keeps their persisted compatibility values fixed.
 	delete(cfg, config.LowResourceModeKey)
@@ -349,28 +341,6 @@ func normalizeAdminDefaultPageSize(raw any) (int, bool) {
 		return 0, false
 	}
 	return int(value), true
-}
-
-func normalizeGitHubProxySetting(raw any) (string, error) {
-	if raw == nil {
-		return "", nil
-	}
-	value, ok := raw.(string)
-	if !ok {
-		return "", errors.New("GitHub 代理地址必须是字符串")
-	}
-	normalized, err := themehttp.NormalizeGitHubProxy(value)
-	if err == nil {
-		return normalized, nil
-	}
-	switch {
-	case errors.Is(err, themehttp.ErrPrivateAddress):
-		return "", errors.New("代理地址不能是私有或保留地址")
-	case errors.Is(err, themehttp.ErrUnsupportedScheme):
-		return "", errors.New("代理地址仅支持 HTTP 或 HTTPS")
-	default:
-		return "", errors.New("代理地址无效")
-	}
 }
 
 func normalizeTrafficReminderStep(raw any) (int, bool) {

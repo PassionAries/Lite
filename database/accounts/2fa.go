@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	TwoFactorIssuer     = "轻量.Lite"
+	TwoFactorIssuer     = "Lite"
 	ErrTwoFactorInvalid = errors.New("Invalid 2FA code")
 	ErrTwoFactorClosed  = errors.New("2FA is unavailable")
 )

@@ -125,66 +125,6 @@ func TestPingTaskDistributionsKeepsHistoryWhenWindowIsNotTierAligned(t *testing.
 	}
 }
 
-func TestPingTaskDistributionsBatchMatchesPerEntity(t *testing.T) {
-	ctx := context.Background()
-	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
-	store := openPingDistributionStore(t, RollupPolicy{
-		RawRetention: 15 * time.Minute,
-		Tiers:        []RollupTier{{Interval: time.Minute, Retention: 48 * time.Hour}},
-	})
-	writePingSamples(t, store, "node-a", "7", []Point{
-		{Timestamp: now.Add(-time.Minute), Value: 12},
-		{Timestamp: now.Add(-30 * time.Second), Value: 18},
-	})
-	writePingSamples(t, store, "node-b", "8", []Point{
-		{Timestamp: now.Add(-2 * time.Minute), Value: 40},
-		{Timestamp: now.Add(-time.Minute), Value: 80},
-	})
-	writePingSamples(t, store, "node-c", "7", []Point{
-		{Timestamp: now.Add(-30 * time.Minute), Value: 10},
-		{Timestamp: now.Add(-29 * time.Minute), Value: 110},
-	})
-	if _, err := store.Compact(ctx, now); err != nil {
-		t.Fatal(err)
-	}
-
-	entityIDs := []string{"node-a", "node-b", "node-c"}
-	start := now.Add(-time.Hour)
-	want := make([]map[string]PingDistribution, 0, len(entityIDs))
-	for _, entityID := range entityIDs {
-		got, err := store.PingTaskDistributions(ctx, entityID, start, now, now)
-		if err != nil {
-			t.Fatalf("%s: %v", entityID, err)
-		}
-		want = append(want, got)
-	}
-	batch, err := store.PingTaskDistributionsBatch(ctx, entityIDs, start, now, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batch) != len(want) {
-		t.Fatalf("batch len = %d, want %d", len(batch), len(want))
-	}
-	for index, entityID := range entityIDs {
-		if len(batch[index]) != len(want[index]) {
-			t.Fatalf("%s batch = %#v, want %#v", entityID, batch[index], want[index])
-		}
-		for taskID, dist := range want[index] {
-			if !sameDistribution(dist, batch[index][taskID]) {
-				t.Fatalf("%s task %s batch = %+v, want %+v", entityID, taskID, batch[index][taskID], dist)
-			}
-		}
-	}
-
-	empty, err := store.PingTaskDistributionsBatch(ctx, nil, start, now, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(empty) != 0 {
-		t.Fatalf("empty batch = %#v", empty)
-	}
-}
-
 func TestPingTaskDistributionsWaitsForHeavyReadSlot(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)

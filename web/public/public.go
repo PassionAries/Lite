@@ -52,7 +52,7 @@ const themeBundleMigrationKey = "theme_bundle_migration_v1"
 
 const currentThemeBundleMigration = 12
 
-const adminApplicationTitle = "轻量.Lite Monitor"
+const adminApplicationTitle = "Lite"
 
 const themeChangeReloadScript = `<script>(()=>{window.addEventListener("storage",(event)=>{if(event.key==="lite-active-theme-changed"||event.key==="komari-active-theme-changed"){window.location.reload();}});})();</script>`
 
@@ -118,7 +118,7 @@ func injectCustomHTML(htmlStr, customHead, customBody string) string {
 func renderDocumentTitle(htmlStr, title string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = config.DefaultSitename
+		title = "Lite"
 	}
 
 	titleTag := "<title>" + html.EscapeString(title) + "</title>"
@@ -141,7 +141,7 @@ func renderPublicDocumentTitle(htmlStr, title string) string {
 
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = config.DefaultSitename
+		title = "Lite"
 	}
 	encodedTitle, _ := json.Marshal(title)
 	script := `<script ` + documentTitleSyncMarker + `>(()=>{const expectedTitle=` + string(encodedTitle) + `;const syncTitle=()=>{if(document.title!==expectedTitle){document.title=expectedTitle;}};syncTitle();if(document.head){new MutationObserver(syncTitle).observe(document.head,{childList:true,subtree:true,characterData:true});}})();</script>`
@@ -196,7 +196,7 @@ func renderMobileChromeMeta(htmlStr, appleStatusBar string) string {
 func renderApplicationIdentityWithTitle(htmlStr, title string, synchronizeTitle bool) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = config.DefaultSitename
+		title = "Lite"
 	}
 
 	// Opaque status bar so iOS 18 can follow live hex theme-color on public
@@ -243,7 +243,7 @@ func renderSystemApplicationIdentity(htmlStr, title string) string {
 func renderWebAppManifest(siteName, description string) webAppManifest {
 	siteName = strings.TrimSpace(siteName)
 	if siteName == "" {
-		siteName = config.DefaultSitename
+		siteName = "Lite"
 	}
 	description = strings.TrimSpace(description)
 	if description == "" {
@@ -652,7 +652,7 @@ func Static(r *gin.RouterGroup, noRoute func(handlers ...gin.HandlerFunc)) {
 			config.DescriptionKey: config.DefaultSiteDescription,
 			config.CustomHeadKey:  "",
 			config.CustomBodyKey:  "",
-			config.SitenameKey:    config.DefaultSitename,
+			config.SitenameKey:    "Lite",
 			config.ThemeKey:       DefaultTheme,
 		})
 		return cfg

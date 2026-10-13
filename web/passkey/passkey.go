@@ -129,9 +129,9 @@ func NewWebAuthn(c *gin.Context) (*webauthn.WebAuthn, error) {
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		host = "localhost"
 	}
-	sitename, _ := config.GetAs[string](config.SitenameKey, config.DefaultSitename)
+	sitename, _ := config.GetAs[string](config.SitenameKey, "Lite")
 	if strings.TrimSpace(sitename) == "" {
-		sitename = config.DefaultSitename
+		sitename = "Lite"
 	}
 	scheme := utils.GetScheme(c)
 	originHost := c.Request.Host
