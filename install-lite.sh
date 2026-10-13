@@ -141,7 +141,7 @@ show_banner() {
     fi
     clear 2>/dev/null || true
     echo "=============================================================="
-    echo "            Lite Monitoring System Installer"
+    echo "            轻量.Lite Monitoring System Installer"
     echo "       https://github.com/nuomiiiii/lite"
     echo "=============================================================="
     echo
@@ -432,7 +432,7 @@ create_systemd_service() {
     service_file=$(systemd_unit_file)
     cat > "$service_file" << EOF
 [Unit]
-Description=Lite Service
+Description=轻量.Lite Service
 After=network.target
 
 [Service]
@@ -544,7 +544,7 @@ show_access_info() {
 
 ask_listen_port() {
     while true; do
-        input_port=$(ui_input "监听端口" "请输入 Lite 的监听端口 (1-65535)：" "$DEFAULT_PORT")
+        input_port=$(ui_input "监听端口" "请输入 轻量.Lite 的监听端口 (1-65535)：" "$DEFAULT_PORT")
         if [ $? -ne 0 ]; then
             log_info "安装已取消"
             return 1
@@ -572,7 +572,7 @@ install_binary() {
     log_step "开始二进制安装..."
 
     if is_installed; then
-        ui_msgbox "提示" "Lite 已安装。\n如需升级，请使用主菜单中的升级选项。"
+        ui_msgbox "提示" "轻量.Lite 已安装。\n如需升级，请使用主菜单中的升级选项。"
         return
     fi
 
@@ -598,7 +598,7 @@ install_binary() {
         return 1
     }
 
-    log_step "下载 Lite 二进制文件..."
+    log_step "下载 轻量.Lite 二进制文件..."
     log_info "URL: $download_url"
     if ! download_file "$download_url" "$BINARY_PATH"; then
         ui_msgbox "错误" "下载失败，请检查网络连接。"
@@ -606,10 +606,10 @@ install_binary() {
     fi
 
     chmod +x "$BINARY_PATH"
-    log_success "Lite 二进制文件安装完成: $BINARY_PATH"
+    log_success "轻量.Lite 二进制文件安装完成: $BINARY_PATH"
 
     if ! service_available; then
-        ui_msgbox "安装完成" "警告：未检测到 systemd 或 OpenWrt procd，已跳过服务创建。\n\n您可以手动运行 Lite：\n    $BINARY_PATH server -l 0.0.0.0:$LISTEN_PORT"
+        ui_msgbox "安装完成" "警告：未检测到 systemd 或 OpenWrt procd，已跳过服务创建。\n\n您可以手动运行 轻量.Lite：\n    $BINARY_PATH server -l 0.0.0.0:$LISTEN_PORT"
         return
     fi
 
@@ -618,10 +618,10 @@ install_binary() {
     service_ctl start
 
     if wait_for_service_active; then
-        log_success "Lite 服务启动成功"
+        log_success "轻量.Lite 服务启动成功"
         show_access_info "$LISTEN_PORT"
     else
-        ui_msgbox "错误" "Lite 服务启动失败。请查看系统日志。"
+        ui_msgbox "错误" "轻量.Lite 服务启动失败。请查看系统日志。"
         return 1
     fi
 }
@@ -638,10 +638,10 @@ restore_upgrade_backup() {
 }
 
 upgrade_lite() {
-    log_step "升级 Lite..."
+    log_step "升级 轻量.Lite..."
 
     if ! is_installed; then
-        ui_msgbox "错误" "Lite 未安装。请先安装它。"
+        ui_msgbox "错误" "轻量.Lite 未安装。请先安装它。"
         return 1
     fi
 
@@ -652,12 +652,12 @@ upgrade_lite() {
 
     select_channel
 
-    log_step "停止 Lite 服务..."
+    log_step "停止 轻量.Lite 服务..."
     if ! service_ctl stop; then
         if service_ctl start && wait_for_service_active; then
-            ui_msgbox "错误" "停止 Lite 服务失败，升级已取消并已确认原服务正常运行。"
+            ui_msgbox "错误" "停止 轻量.Lite 服务失败，升级已取消并已确认原服务正常运行。"
         else
-            ui_msgbox "错误" "停止 Lite 服务失败，升级已取消，但原服务状态异常，请检查服务日志。"
+            ui_msgbox "错误" "停止 轻量.Lite 服务失败，升级已取消，但原服务状态异常，请检查服务日志。"
         fi
         return 1
     fi
@@ -743,11 +743,11 @@ upgrade_lite() {
     fi
     service_enable >/dev/null 2>&1 || true
 
-    log_step "重启 Lite 服务..."
+    log_step "重启 轻量.Lite 服务..."
     service_ctl start
 
     if wait_for_service_active; then
-        ui_msgbox "升级完成" "Lite 升级成功 (通道: $CHANNEL)。后台一键更新已启用。"
+        ui_msgbox "升级完成" "轻量.Lite 升级成功 (通道: $CHANNEL)。后台一键更新已启用。"
     else
         log_error "新版本服务未能启动，正在从本次备份恢复"
         if restore_upgrade_backup; then
@@ -760,14 +760,14 @@ upgrade_lite() {
 }
 
 uninstall_lite() {
-    log_step "卸载 Lite..."
+    log_step "卸载 轻量.Lite..."
 
     if ! is_installed; then
-        ui_msgbox "提示" "Lite 未安装。"
+        ui_msgbox "提示" "轻量.Lite 未安装。"
         return 0
     fi
 
-    if ! ui_yesno "确认卸载" "这将删除 Lite 二进制文件和服务。\n\n您确定要继续吗？"; then
+    if ! ui_yesno "确认卸载" "这将删除 轻量.Lite 二进制文件和服务。\n\n您确定要继续吗？"; then
         log_info "卸载已取消"
         return 0
     fi
@@ -798,13 +798,13 @@ uninstall_lite() {
     log_step "删除二进制文件..."
     rm -f "$BINARY_PATH"
     rmdir "$INSTALL_DIR" 2>/dev/null || log_info "数据目录 $INSTALL_DIR 不为空，未删除"
-    log_success "Lite 二进制文件已删除"
-    ui_msgbox "卸载完成" "Lite 卸载完成。\n\n数据文件保留在 $DATA_DIR"
+    log_success "轻量.Lite 二进制文件已删除"
+    ui_msgbox "卸载完成" "轻量.Lite 卸载完成。\n\n数据文件保留在 $DATA_DIR"
 }
 
 show_status() {
     if ! is_installed; then
-        ui_msgbox "错误" "Lite 未安装。"
+        ui_msgbox "错误" "轻量.Lite 未安装。"
         return
     fi
     if ! service_available; then
@@ -819,7 +819,7 @@ show_status() {
         esac
         ui_msgbox "服务状态" "$status_output"
     else
-        log_step "Lite 服务状态:"
+        log_step "轻量.Lite 服务状态:"
         case "$manager" in
             systemd) systemctl status "$(service_unit)" --no-pager -l ;;
             procd) "$(initd_script)" status ;;
@@ -831,7 +831,7 @@ show_status() {
 
 show_logs() {
     if ! is_installed; then
-        ui_msgbox "错误" "Lite 未安装。"
+        ui_msgbox "错误" "轻量.Lite 未安装。"
         return
     fi
     if ! service_available; then
@@ -841,7 +841,7 @@ show_logs() {
     if tui_enabled; then
         clear 2>/dev/null || true
     fi
-    log_step "查看 Lite 服务日志 (按 Ctrl+C 退出)..."
+    log_step "查看 轻量.Lite 服务日志 (按 Ctrl+C 退出)..."
     manager=$(current_service_manager)
     case "$manager" in
         systemd) journalctl -u "$SERVICE_NAME" -f --no-pager ;;
@@ -857,14 +857,14 @@ show_logs() {
 
 restart_service() {
     if ! is_installed; then
-        ui_msgbox "错误" "Lite 未安装。"
+        ui_msgbox "错误" "轻量.Lite 未安装。"
         return
     fi
     if ! service_available; then
         ui_msgbox "错误" "未检测到 systemd 或 OpenWrt procd。无法重启服务。"
         return
     fi
-    log_step "重启 Lite 服务..."
+    log_step "重启 轻量.Lite 服务..."
     service_ctl restart 2>/dev/null || {
         service_ctl stop >/dev/null 2>&1 || true
         service_ctl start
@@ -878,14 +878,14 @@ restart_service() {
 
 stop_service() {
     if ! is_installed; then
-        ui_msgbox "错误" "Lite 未安装。"
+        ui_msgbox "错误" "轻量.Lite 未安装。"
         return
     fi
     if ! service_available; then
         ui_msgbox "错误" "未检测到 systemd 或 OpenWrt procd。无法停止服务。"
         return
     fi
-    log_step "停止 Lite 服务..."
+    log_step "停止 轻量.Lite 服务..."
     service_ctl stop
     ui_msgbox "成功" "服务已停止。"
 }
@@ -893,10 +893,10 @@ stop_service() {
 main_menu() {
     while true; do
         show_banner
-        choice=$(ui_menu "Lite 监控系统安装器" "请选择操作：" \
-            "1" "安装 Lite" \
-            "2" "升级 Lite" \
-            "3" "卸载 Lite" \
+        choice=$(ui_menu "轻量.Lite 监控系统安装器" "请选择操作：" \
+            "1" "安装 轻量.Lite" \
+            "2" "升级 轻量.Lite" \
+            "3" "卸载 轻量.Lite" \
             "4" "查看状态" \
             "5" "查看日志" \
             "6" "重启服务" \

@@ -22,7 +22,7 @@ func TestTOTPReplayIsSharedAcrossLoginAndRemoteReauth(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = accounts.DeleteAccountByUsernameWithDB(dbcore.GetDBInstance(), user.Username) })
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: user.Username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: accounts.TwoFactorIssuer, AccountName: user.Username})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestReauthorizeSSOWithoutLocalPassword(t *testing.T) {
 		t.Fatalf("SSO without 2FA still needs a password: %v", err)
 	}
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: user.Username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: accounts.TwoFactorIssuer, AccountName: user.Username})
 	if err != nil {
 		t.Fatal(err)
 	}

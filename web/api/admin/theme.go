@@ -464,6 +464,7 @@ func themeFetchError(err error) error {
 }
 
 func downloadThemeArchive(rawURL string) (string, error) {
+	rawURL = applyThemeGitHubProxy(rawURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	path, _, err := themehttp.DownloadFile(ctx, rawURL, themehttp.MaxArchive, "lite-theme")
@@ -474,6 +475,7 @@ func downloadThemeArchive(rawURL string) (string, error) {
 }
 
 func fetchThemeJSON(rawURL string, maxBytes int64) ([]byte, error) {
+	rawURL = applyThemeGitHubProxy(rawURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	data, err := themehttp.DownloadBytes(ctx, rawURL, maxBytes)
@@ -497,33 +499,45 @@ func fetchThemeJSON(rawURL string, maxBytes int64) ([]byte, error) {
 //   - 最新release的第一个资源的下载链接
 //   - 错误信息（如果有）
 func getGitHubReleaseDownloadURL(owner, repo string) (string, error) {
+	release, err := getGitHubLatestRelease(owner, repo)
+	if err != nil {
+		return "", err
+	}
+	return release.DownloadURL, nil
+}
+
+type gitHubLatestRelease struct {
+	TagName     string
+	DownloadURL string
+}
+
+func getGitHubLatestRelease(owner, repo string) (gitHubLatestRelease, error) {
 	if owner == "" || repo == "" {
-		return "", errors.New("GitHub仓库所有者和仓库名称不能为空")
+		return gitHubLatestRelease{}, errors.New("GitHub仓库所有者和仓库名称不能为空")
 	}
 
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 	data, err := fetchThemeJSON(apiURL, themehttp.MaxGitHubJSON)
 	if err != nil {
-		return "", fmt.Errorf("获取GitHub release信息失败: %v", err)
+		return gitHubLatestRelease{}, fmt.Errorf("获取GitHub release信息失败: %v", err)
 	}
 
 	var releaseInfo struct {
-		Assets []struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
 			BrowserDownloadURL string `json:"browser_download_url"`
 		} `json:"assets"`
 	}
 	if err := json.Unmarshal(data, &releaseInfo); err != nil {
-		return "", errors.New("解析GitHub API响应失败")
+		return gitHubLatestRelease{}, errors.New("解析GitHub API响应失败")
 	}
-
-	// 检查是否有可下载的资源
 	if len(releaseInfo.Assets) == 0 {
-		return "", errors.New("GitHub release中没有可下载的资源")
+		return gitHubLatestRelease{}, errors.New("GitHub release中没有可下载的资源")
 	}
-
-	// 返回第一个资源的下载链接
-	// 相当于shell命令: curl -s https://api.github.com/repos/owner/repo/releases/latest | jq -r ".assets[0].browser_download_url"
-	return releaseInfo.Assets[0].BrowserDownloadURL, nil
+	return gitHubLatestRelease{
+		TagName:     releaseInfo.TagName,
+		DownloadURL: releaseInfo.Assets[0].BrowserDownloadURL,
+	}, nil
 }
 
 // isGitHubRepoURL 检查URL是否是GitHub仓库地址

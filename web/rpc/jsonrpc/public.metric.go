@@ -404,14 +404,16 @@ func publicGetPingMetricStats(ctx context.Context, req *rpc.JsonRpcRequest) (any
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, "Failed to query ping stats: "+err.Error(), nil)
 	}
+	windows, err := store.PingTaskDistributionsBatch(ctx, entityIDs, start, end, now)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, "Failed to query ping stats: "+err.Error(), nil)
+	}
 	stats := make([]publicPingMetricTaskStats, 0)
 	for index, entityID := range entityIDs {
 		groups := publicPingMetricGroupsFromSummary(summaries[index])
-		window, err := store.PingTaskDistributions(ctx, entityID, start, end, now)
-		if err != nil {
-			return nil, rpc.MakeError(rpc.InternalError, "Failed to query ping stats: "+err.Error(), nil)
+		if index < len(windows) {
+			groups.Window = windows[index]
 		}
-		groups.Window = window
 		entityStats := publicPingStatsFromAggregateGroups(entityID, groups, taskMap, taskFilter)
 		stats = append(stats, entityStats...)
 	}

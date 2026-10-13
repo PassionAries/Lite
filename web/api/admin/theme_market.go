@@ -450,6 +450,7 @@ func validateThemeMarketURLSyntax(rawURL string) error {
 }
 
 func downloadThemeMarketURL(rawURL string, maxSize int64) ([]byte, error) {
+	rawURL = applyThemeGitHubProxy(rawURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	data, err := themehttp.DownloadBytes(ctx, rawURL, maxSize)
@@ -460,6 +461,7 @@ func downloadThemeMarketURL(rawURL string, maxSize int64) ([]byte, error) {
 }
 
 func downloadThemeMarketFile(rawURL string, maxSize int64) (string, []byte, error) {
+	rawURL = applyThemeGitHubProxy(rawURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	path, sum, err := themehttp.DownloadFile(ctx, rawURL, maxSize, "lite-market-theme")

@@ -9,13 +9,14 @@ const (
 	AdminDefaultPageSize    = 20
 	AdminDefaultPageSizeMin = 5
 	AdminDefaultPageSizeMax = 100
-	DefaultSiteDescription  = "All your servers, one simple view."
+	DefaultSitename         = "轻量.Lite"
+	DefaultSiteDescription  = "轻量.Lite丨更适合MJJ的养老探针"
 )
 
 type Settings struct {
 	ID                     uint   `json:"id,omitempty"`                                             // 1
-	Sitename               string `json:"sitename" default:"Lite"`                                  // 站点名称，默认 "Lite"
-	Description            string `json:"description" default:"All your servers, one simple view."` // 站点描述
+	Sitename               string `json:"sitename" default:"轻量.Lite"`                            // 站点名称，默认 "轻量.Lite"
+	Description            string `json:"description" default:"轻量.Lite丨更适合MJJ的养老探针"`     // 站点描述
 	AdminDefaultPageSize   int    `json:"admin_default_page_size" default:"20"`                     // 后台列表默认每页条数
 	ReduceMotion           bool   `json:"reduce_motion" default:"false"`                            // 兼容旧库；界面不再提供关闭动效的开关
 	AutoOrderNewClients    bool   `json:"auto_order_new_clients_by_region" default:"false"`         // 新服务器首次识别国家\地区后自动排到同组同国家\地区节点后面，默认关闭
@@ -70,7 +71,9 @@ type Settings struct {
 
 func IsLegacyDefaultDescription(value string) bool {
 	switch strings.TrimSpace(value) {
-	case "A simple server monitor tool.", "Lite, a simple server monitoring tool.":
+	case "A simple server monitor tool.",
+		"Lite, a simple server monitoring tool.",
+		"All your servers, one simple view.":
 		return true
 	default:
 		return false
@@ -142,4 +145,17 @@ const (
 	XtermjsSettingsKey                   = "xtermjs_settings"
 	DashboardSettingsKey                 = "dashboard_settings"
 	ThemeMarketSourcesKey                = "theme_market_sources"
+)
+
+const (
+	ThemeAutoUpdateIntervalMinHours     = 1
+	ThemeAutoUpdateIntervalMaxHours     = 24 * 30
+	ThemeAutoUpdateDefaultIntervalHours = 24
+
+	ThemeAutoUpdateEnabledKey       = "theme_auto_update_enabled"
+	ThemeAutoUpdateIntervalHoursKey = "theme_auto_update_interval_hours"
+	ThemeAutoUpdateNextUnixKey      = "theme_auto_update_next_unix"
+	ThemeAutoUpdateLastUnixKey      = "theme_auto_update_last_unix"
+	ThemeAutoUpdateLastSummaryKey   = "theme_auto_update_last_summary"
+	GitHubProxyKey                  = "github_proxy"
 )

@@ -349,6 +349,37 @@ func TestNormalizeSiteFactoryDefaultsMigratesLegacyValuesOnce(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacySiteDescriptionUpdatesOldDefault(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:migrate-legacy-site-description?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open config database: %v", err)
+	}
+	config.SetDb(db)
+	if err := config.SetMany(map[string]any{
+		config.DescriptionKey:         "All your servers, one simple view.",
+		config.SiteFactoryDefaultsKey: true,
+	}); err != nil {
+		t.Fatalf("seed previous default description: %v", err)
+	}
+	if err := migrateLegacySiteDescription(); err != nil {
+		t.Fatalf("migrate legacy site description: %v", err)
+	}
+	description, err := config.GetAs[string](config.DescriptionKey)
+	if err != nil || description != config.DefaultSiteDescription {
+		t.Fatalf("description = %q, err %v; want %q", description, err, config.DefaultSiteDescription)
+	}
+	if err := config.Set(config.DescriptionKey, "Custom description"); err != nil {
+		t.Fatalf("set custom description: %v", err)
+	}
+	if err := migrateLegacySiteDescription(); err != nil {
+		t.Fatalf("migrate custom description: %v", err)
+	}
+	description, err = config.GetAs[string](config.DescriptionKey)
+	if err != nil || description != "Custom description" {
+		t.Fatalf("custom description overwritten: %q, err %v", description, err)
+	}
+}
+
 func TestMetricCompactCycleStateConcurrentAddAndReset(t *testing.T) {
 	const workers = 64
 	wantErr := errors.New("compact step failed")

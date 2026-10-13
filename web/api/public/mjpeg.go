@@ -122,7 +122,7 @@ var langEN = langPack{
 	LongTerm:        "Long-term",
 	Expired:         "Expired",
 	LastUpdate:      "Last Update: ",
-	PoweredBy:       "Powered by Lite",
+	PoweredBy:       "Powered by 轻量.Lite",
 	PreparingMJPEG:  "Preparing MJPEG Stream",
 	DownloadingFont: "Downloading font %s / %s",
 	SpeedRemaining:  "Speed %s, %ds remaining",
@@ -162,7 +162,7 @@ var langZH = langPack{
 	LongTerm:        "长期",
 	Expired:         "已过期",
 	LastUpdate:      "最后更新：",
-	PoweredBy:       "Powered by Lite",
+	PoweredBy:       "Powered by 轻量.Lite",
 	PreparingMJPEG:  "Preparing MJPEG Stream",
 	DownloadingFont: "Downloading font %s / %s",
 	SpeedRemaining:  "Speed %s, %ds remaining",
@@ -665,7 +665,7 @@ func renderStatusTable(ctx context.Context, lang string, tzOffset *int, fontErr 
 	y := padding
 
 	// 标题
-	siteName, _ := conf.GetAs[string](conf.SitenameKey, "Lite")
+	siteName, _ := conf.GetAs[string](conf.SitenameKey, conf.DefaultSitename)
 	fontMutex.RLock()
 	boldFace := fontFaceBold
 	normalFace := fontFace
@@ -833,7 +833,7 @@ func renderStatusTableWithBasicFont(ctx context.Context, lang string, tzOffset *
 	y := padding
 
 	// 标题
-	siteName, _ := conf.GetAs[string](conf.SitenameKey, "Lite")
+	siteName, _ := conf.GetAs[string](conf.SitenameKey, conf.DefaultSitename)
 
 	drawStringBasic(img, siteName, padding+5, y+titleFontSize, color.Black)
 	y += headerHeight

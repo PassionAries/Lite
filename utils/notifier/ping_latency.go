@@ -112,6 +112,23 @@ func latencyFullyRecovered(stats metricstore.PingHealthStats, windowStart, now t
 	return latencyWindowCovered(stats, windowStart, now, notification, pingIntervalSeconds) && latencyAverageInside(stats, low, high)
 }
 
+// latencyExtremaInside reports whether every observed sample in the window sits
+// strictly inside the comparison band. 0.00 ms is not a real latency, so it is
+// ignored the same way as an average of 0.
+func latencyExtremaInside(stats metricstore.PingHealthStats, low, high float64) bool {
+	if stats.MinLatencyMS > 0 && stats.MinLatencyMS <= low {
+		return false
+	}
+	if stats.MaxLatencyMS > 0 && stats.MaxLatencyMS >= high {
+		return false
+	}
+	return true
+}
+
+func latencyCleanForBaseline(stats metricstore.PingHealthStats, windowStart, now time.Time, notification models.PingLossNotification, pingIntervalSeconds int, low, high float64) bool {
+	return latencyFullyRecovered(stats, windowStart, now, notification, pingIntervalSeconds, low, high) && latencyExtremaInside(stats, low, high)
+}
+
 func evaluateLatencyAnomaly(
 	notification models.PingLossNotification,
 	stats metricstore.PingHealthStats,
@@ -339,13 +356,13 @@ func maybeUpdateAdaptiveBaseline(
 		if notification.AdaptiveBaselineResumeAt != nil && now.Before(*notification.AdaptiveBaselineResumeAt) {
 			return
 		}
-		if !latencyFullyRecovered(stats, windowStart, now, *notification, pingIntervalSeconds, low, high) {
+		if !latencyCleanForBaseline(stats, windowStart, now, *notification, pingIntervalSeconds, low, high) {
 			return
 		}
 		notification.AdaptiveBaselineStatus = models.AdaptiveBaselineReady
 		notification.AdaptiveBaselineResumeAt = nil
 	}
-	if !latencyFullyRecovered(stats, windowStart, now, *notification, pingIntervalSeconds, low, high) {
+	if !latencyCleanForBaseline(stats, windowStart, now, *notification, pingIntervalSeconds, low, high) {
 		return
 	}
 	if notification.AdaptiveBaselineUpdatedAt != nil &&
