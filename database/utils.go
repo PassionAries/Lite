@@ -71,7 +71,7 @@ func GetPublicInfo() (map[string]interface{}, error) {
 
 	// Apply defaults only when a key is missing.
 	if !hasKey("sitename") {
-		cst.Sitename = "Lite"
+		cst.Sitename = config.DefaultSitename
 	}
 	if !hasKey("description") {
 		cst.Description = config.DefaultSiteDescription
@@ -86,7 +86,7 @@ func GetPublicInfo() (map[string]interface{}, error) {
 	// Fallback defaults if we couldn't enumerate keys.
 	if allErr != nil {
 		if cst.Sitename == "" {
-			cst.Sitename = "Lite"
+			cst.Sitename = config.DefaultSitename
 		}
 		if cst.Description == "" {
 			cst.Description = config.DefaultSiteDescription

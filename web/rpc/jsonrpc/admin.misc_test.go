@@ -10,6 +10,32 @@ import (
 	"github.com/nuomiiiii/lite/web/passkey"
 )
 
+func TestNormalizeGitHubProxySetting(t *testing.T) {
+	empty, err := normalizeGitHubProxySetting(" ")
+	if err != nil {
+		t.Fatalf("empty proxy: %v", err)
+	}
+	if empty != "" {
+		t.Fatalf("empty proxy = %q", empty)
+	}
+	value, err := normalizeGitHubProxySetting("https://ghfast.top/")
+	if err != nil {
+		t.Fatalf("valid proxy: %v", err)
+	}
+	if value != "https://ghfast.top" {
+		t.Fatalf("valid proxy = %q", value)
+	}
+	if _, err := normalizeGitHubProxySetting("ftp://ghfast.top"); err == nil || err.Error() != "代理地址仅支持 HTTP 或 HTTPS" {
+		t.Fatalf("scheme error = %v", err)
+	}
+	if _, err := normalizeGitHubProxySetting("http://127.0.0.1"); err == nil || err.Error() != "代理地址不能是私有或保留地址" {
+		t.Fatalf("private error = %v", err)
+	}
+	if _, err := normalizeGitHubProxySetting(12); err == nil || err.Error() != "GitHub 代理地址必须是字符串" {
+		t.Fatalf("type error = %v", err)
+	}
+}
+
 func TestNormalizeAdminDefaultPageSize(t *testing.T) {
 	tests := []struct {
 		name  string

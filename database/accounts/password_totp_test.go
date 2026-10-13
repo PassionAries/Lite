@@ -36,7 +36,7 @@ func TestArgon2idPasswordRoundTripAndLegacy(t *testing.T) {
 }
 
 func TestTOTPCounterReplayAndNextWindow(t *testing.T) {
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: "test"})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: TwoFactorIssuer, AccountName: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

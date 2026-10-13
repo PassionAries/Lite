@@ -360,7 +360,7 @@ func writeDirectoryToZip(writer *zip.Writer, contentDir string) error {
 }
 
 func writeBackupMarkup(writer *zip.Writer, scope backupScope, now time.Time) error {
-	content := "此文件为 Lite 备份标记文件，请勿删除。\nThis is a Lite backup markup file, please do not delete.\n\n" +
+	content := "此文件为 轻量.Lite 备份标记文件，请勿删除。\nThis is a 轻量.Lite backup markup file, please do not delete.\n\n" +
 		"备份类型 / Backup Type: " + string(scope) + "\n" +
 		"备份时间 / Backup Time: " + now.UTC().Format(time.RFC3339Nano)
 	entry, err := writer.CreateHeader(&zip.FileHeader{Name: backup.MarkupName, Method: zip.Deflate, Modified: now})
@@ -404,7 +404,7 @@ func DownloadBackup(c *gin.Context) {
 		return
 	}
 	if !flags.IsSQLite() {
-		api.RespondError(c, http.StatusUnprocessableEntity, "当前主数据库不是 SQLite，无法生成可直接恢复的 Lite 备份")
+		api.RespondError(c, http.StatusUnprocessableEntity, "当前主数据库不是 SQLite，无法生成可直接恢复的 轻量.Lite 备份")
 		return
 	}
 

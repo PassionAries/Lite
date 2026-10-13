@@ -35,6 +35,9 @@ var (
 func GetAs[T any](key string, defaul ...any) (T, error) {
 	var t T
 	var item ConfigItem
+	if db == nil {
+		return t, fmt.Errorf("config database is not initialized")
+	}
 
 	err := db.First(&item, "key = ?", key).Error
 	if err != nil {

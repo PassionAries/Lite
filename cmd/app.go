@@ -40,6 +40,7 @@ import (
 	"github.com/nuomiiiii/lite/utils/notifier"
 	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"github.com/nuomiiiii/lite/web/api"
+	"github.com/nuomiiiii/lite/web/api/admin"
 	installweb "github.com/nuomiiiii/lite/web/install"
 	"github.com/nuomiiiii/lite/web/mcp"
 	"github.com/nuomiiiii/lite/web/oauth"
@@ -134,6 +135,9 @@ func (a *App) Bootstrap() error {
 	if err := normalizeSiteFactoryDefaults(); err != nil {
 		return fmt.Errorf("failed to normalize site factory defaults: %w", err)
 	}
+	if err := migrateLegacySiteDescription(); err != nil {
+		return fmt.Errorf("failed to migrate site description: %w", err)
+	}
 	if err := migrateAllowRemoteManagement(); err != nil {
 		return fmt.Errorf("failed to migrate remote management setting: %w", err)
 	}
@@ -181,6 +185,18 @@ func normalizeSiteFactoryDefaults() error {
 		updates[config.SiteFactoryDefaultsKey] = true
 	}
 	return config.SetMany(updates)
+}
+
+func migrateLegacySiteDescription() error {
+	all, err := config.GetAll()
+	if err != nil {
+		return err
+	}
+	description, ok := all[config.DescriptionKey].(string)
+	if !ok || !config.IsLegacyDefaultDescription(description) {
+		return nil
+	}
+	return config.Set(config.DescriptionKey, config.DefaultSiteDescription)
 }
 
 // migrateAllowRemoteManagement keeps remote management on for existing
@@ -638,6 +654,12 @@ func (a *App) StartBackground() error {
 	registerScheduledWork()
 	a.addCleanup("scheduler", func(context.Context) error {
 		corn.StopAll()
+		return nil
+	})
+
+	stopThemeAutoUpdate := admin.StartThemeAutoUpdate()
+	a.addCleanup("theme-auto-update", func(context.Context) error {
+		stopThemeAutoUpdate()
 		return nil
 	})
 

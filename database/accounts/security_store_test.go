@@ -106,7 +106,7 @@ func TestTOTPCounterReplayAcrossLoginAndReauth(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = DeleteAccountByUsername(username) })
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: TwoFactorIssuer, AccountName: username})
 	require.NoError(t, err)
 	encrypted, err := encryptTOTPSecret(key.Secret())
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestConcurrentTOTPReplayOnlySucceedsOnce(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = DeleteAccountByUsername(username) })
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: TwoFactorIssuer, AccountName: username})
 	require.NoError(t, err)
 	encrypted, err := encryptTOTPSecret(key.Secret())
 	require.NoError(t, err)

@@ -23,6 +23,25 @@ type PingDistribution struct {
 // as raw samples uses linear interpolation. Older samples that only remain in
 // rollups are merged from bucket moments and digests.
 func (s *Store) PingTaskDistributions(ctx context.Context, entityID string, start, end, now time.Time) (map[string]PingDistribution, error) {
+	out, err := s.PingTaskDistributionsBatch(ctx, []string{entityID}, start, end, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return map[string]PingDistribution{}, nil
+	}
+	return out[0], nil
+}
+
+// PingTaskDistributionsBatch returns one task-distribution map per entity ID,
+// in input order. Numbers match calling PingTaskDistributions per entity; one
+// historical-read slot covers the whole batch so public ping stats do not
+// serialize a window scan for every server.
+func (s *Store) PingTaskDistributionsBatch(ctx context.Context, entityIDs []string, start, end, now time.Time) ([]map[string]PingDistribution, error) {
+	result := make([]map[string]PingDistribution, len(entityIDs))
+	if len(entityIDs) == 0 {
+		return result, nil
+	}
 	if err := s.ensureOpen(); err != nil {
 		return nil, err
 	}
@@ -37,43 +56,65 @@ func (s *Store) PingTaskDistributions(ctx context.Context, entityID string, star
 	if interval <= 0 {
 		interval = time.Second
 	}
-	probe := AggregateQuery{
-		Query: Query{
-			MetricName: sqliteMergedPingLatencyMetric,
-			EntityID:   entityID,
-			Start:      start,
-			End:        end,
-		},
-		Interval:       interval,
-		PreserveSeries: true,
-	}
 	select {
 	case s.heavyReadGate <- struct{}{}:
 		defer func() { <-s.heavyReadGate }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	rawOnly, err := s.seriesPhysicalUsesOnlyRaw(ctx, probe, now)
-	if err != nil {
-		return nil, err
+
+	rawIndices := make([]int, 0, len(entityIDs))
+	rawQueries := make([]Query, 0, len(entityIDs))
+	for index, entityID := range entityIDs {
+		probe := AggregateQuery{
+			Query: Query{
+				MetricName: sqliteMergedPingLatencyMetric,
+				EntityID:   entityID,
+				Start:      start,
+				End:        end,
+			},
+			Interval:       interval,
+			PreserveSeries: true,
+		}
+		rawOnly, err := s.seriesPhysicalUsesOnlyRaw(ctx, probe, now)
+		if err != nil {
+			return nil, err
+		}
+		if rawOnly {
+			rawIndices = append(rawIndices, index)
+			rawQueries = append(rawQueries, Query{
+				MetricName: sqliteMergedPingLatencyMetric,
+				EntityID:   entityID,
+				Start:      start,
+				End:        end,
+				Order:      OrderAsc,
+			}.normalized())
+			continue
+		}
+		dist, err := s.pingTaskDistributionsFromMergedBuckets(ctx, probe, now)
+		if err != nil {
+			return nil, err
+		}
+		result[index] = dist
 	}
-	if rawOnly {
-		return s.pingTaskDistributionsFromRaw(ctx, entityID, start, end)
+	if len(rawQueries) > 0 {
+		points, err := s.queryBatchWithinGate(ctx, rawQueries, make([]bool, len(rawQueries)))
+		if err != nil {
+			return nil, err
+		}
+		for i, index := range rawIndices {
+			result[index] = pingTaskDistributionsFromPoints(points[i])
+		}
 	}
-	return s.pingTaskDistributionsFromMergedBuckets(ctx, probe, now)
+	for index := range result {
+		if result[index] == nil {
+			result[index] = map[string]PingDistribution{}
+		}
+	}
+	return result, nil
 }
 
-func (s *Store) pingTaskDistributionsFromRaw(ctx context.Context, entityID string, start, end time.Time) (map[string]PingDistribution, error) {
-	points, err := s.Query(ctx, Query{
-		MetricName: sqliteMergedPingLatencyMetric,
-		EntityID:   entityID,
-		Start:      start,
-		End:        end,
-		Order:      OrderAsc,
-	})
-	if err != nil {
-		return nil, err
-	}
+func pingTaskDistributionsFromPoints(points []Point) map[string]PingDistribution {
 	grouped := make(map[string][]float64)
 	for _, point := range points {
 		if point.Value < 0 || math.IsNaN(point.Value) || math.IsInf(point.Value, 0) {
@@ -89,7 +130,7 @@ func (s *Store) pingTaskDistributionsFromRaw(ctx context.Context, entityID strin
 	for taskID, values := range grouped {
 		out[taskID] = pingDistributionFromValues(values)
 	}
-	return out, nil
+	return out
 }
 
 func (s *Store) pingTaskDistributionsFromMergedBuckets(ctx context.Context, query AggregateQuery, now time.Time) (map[string]PingDistribution, error) {

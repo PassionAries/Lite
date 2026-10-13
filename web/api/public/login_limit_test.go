@@ -97,7 +97,7 @@ func TestLoginWrongTOTPTriggersLimitWithoutLeaking(t *testing.T) {
 		accounts.ResetLoginLimitsForTest()
 	})
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: accounts.TwoFactorIssuer, AccountName: username})
 	require.NoError(t, err)
 	setupCode, err := totp.GenerateCodeCustom(key.Secret(), time.Now(), totp.ValidateOpts{
 		Period: 30, Skew: 1, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
@@ -160,7 +160,7 @@ func TestLoginPasswordOkThenRequiresTwoFactor(t *testing.T) {
 		accounts.ResetLoginLimitsForTest()
 	})
 
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Lite", AccountName: username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: accounts.TwoFactorIssuer, AccountName: username})
 	require.NoError(t, err)
 	setupCode, err := totp.GenerateCodeCustom(key.Secret(), time.Now(), totp.ValidateOpts{
 		Period: 30, Skew: 1, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
