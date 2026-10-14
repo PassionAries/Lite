@@ -180,7 +180,7 @@ func TestGetPingRecordsReadsRollupsAfterRawCompaction(t *testing.T) {
 
 func TestGetPingRecordsKeepsRequestedWindowInsideLongerRetention(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	s, err := metric.Open(ctx, metric.SQLite(":memory:",
 		metric.WithMaxOpenConns(1),
 		metric.WithRollupPolicy(defaultRollupPolicy()),
