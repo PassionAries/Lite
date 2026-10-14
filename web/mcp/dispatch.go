@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"time"
+
 	v2 "github.com/nuomiiiii/lite/protocol/v2"
 	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"github.com/nuomiiiii/lite/web/api/remote"
@@ -9,7 +11,7 @@ import (
 func dispatchMCPExec(uuid string, params v2.MCPExecParams) bool {
 	queued := false
 	accepted := agent_runtime.GuardRemoteDelivery(func() bool {
-		return remote.RemoteManagementEnabled() && mcpEnabled()
+		return mcpDispatchAllowed(params.LeaseID, uuid, params.ExpiresAt)
 	}, func() {
 		event := agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPExec, params)
 		queued = event.ID != ""
@@ -26,7 +28,7 @@ func dispatchMCPExec(uuid string, params v2.MCPExecParams) bool {
 func dispatchMCPFile(uuid string, params v2.MCPFileParams) bool {
 	queued := false
 	accepted := agent_runtime.GuardRemoteDelivery(func() bool {
-		return remote.RemoteManagementEnabled() && mcpEnabled()
+		return mcpDispatchAllowed(params.LeaseID, uuid, params.ExpiresAt)
 	}, func() {
 		event := agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPFile, params)
 		queued = event.ID != ""
@@ -38,6 +40,14 @@ func dispatchMCPFile(uuid string, params v2.MCPFileParams) bool {
 		}
 	})
 	return accepted && queued
+}
+
+func mcpDispatchAllowed(leaseID, uuid string, expiresAt time.Time) bool {
+	if !remote.RemoteManagementEnabled() || !mcpEnabled() {
+		return false
+	}
+	lease, err := loadLiveLease(leaseID, time.Now().UTC())
+	return err == nil && leaseContainsNode(lease, uuid) && lease.ExpiresAt.Equal(expiresAt)
 }
 
 func mcpMethods() []string {

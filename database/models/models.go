@@ -199,6 +199,7 @@ type MCPLease struct {
 	AuthorizationRequestID string     `json:"authorization_request_id" gorm:"type:varchar(64)"`
 	TokenFamilyID          string     `json:"token_family_id" gorm:"type:varchar(64);index;not null"`
 	TargetUUIDs            string     `json:"target_uuids" gorm:"type:text;not null"`
+	AllNodes               bool       `json:"all_nodes" gorm:"not null;default:false"`
 	Mode                   string     `json:"mode" gorm:"type:varchar(16);not null;default:'full'"`
 	Note                   string     `json:"note" gorm:"type:varchar(200)"`
 	MaxConcurrency         int        `json:"max_concurrency" gorm:"not null;default:4"`

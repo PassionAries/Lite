@@ -47,7 +47,7 @@ func renewRunningExecutionLeases() {
 			continue
 		}
 		lease, err := loadLiveLease(leaseID, now)
-		if err != nil {
+		if err != nil || !leaseContainsNode(lease, agentUUID) {
 			continue
 		}
 		deadline := minTime(lease.ExpiresAt, now.Add(executionLeaseWindow))

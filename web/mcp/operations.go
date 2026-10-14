@@ -326,13 +326,21 @@ func resolveIdempotentReuse(lease models.MCPLease, op models.MCPOperation, occup
 }
 
 func cancelLeaseOperations(leaseID string) {
+	stopLeaseOperations(leaseID, true)
+}
+
+func stopLeaseOperations(leaseID string, revoke bool) {
 	var ops []models.MCPOperation
 	_ = database().Where("lease_id = ? AND state IN ?", leaseID, []string{opAccepted, opRunning, opCancelRequested}).Find(&ops).Error
 	now := time.Now().UTC()
 	agents := map[string]struct{}{}
+	state := opCancelRequested
+	if !revoke {
+		state = opCancelled
+	}
 	for _, op := range ops {
 		_ = database().Model(&op).Updates(map[string]any{
-			"state":       opCancelRequested,
+			"state":       state,
 			"finished_at": now,
 		}).Error
 		agent_runtime.DispatchV2Event(op.AgentUUID, v2.MethodAgentMCPCancel, v2.MCPCancelParams{
@@ -343,14 +351,25 @@ func cancelLeaseOperations(leaseID string) {
 		agents[op.AgentUUID] = struct{}{}
 		signalOperation(op.ID)
 	}
-	var lease models.MCPLease
-	if err := database().Where("id = ?", leaseID).First(&lease).Error; err == nil {
-		for _, uuid := range parseTargetUUIDs(lease.TargetUUIDs) {
-			agents[uuid] = struct{}{}
+	if revoke {
+		// Include completed file/terminal operations on dynamically authorized nodes.
+		var usedNodes []string
+		_ = database().Model(&models.MCPOperation{}).Where("lease_id = ?", leaseID).
+			Distinct("agent_uuid").Pluck("agent_uuid", &usedNodes).Error
+		for _, uuid := range usedNodes {
+			if uuid != "" {
+				agents[uuid] = struct{}{}
+			}
 		}
-	}
-	for uuid := range agents {
-		agent_runtime.DispatchV2Event(uuid, v2.MethodAgentMCPRevoke, v2.MCPRevokeParams{LeaseID: leaseID})
+		var lease models.MCPLease
+		if err := database().Where("id = ?", leaseID).First(&lease).Error; err == nil {
+			for _, uuid := range parseTargetUUIDs(lease.TargetUUIDs) {
+				agents[uuid] = struct{}{}
+			}
+		}
+		for uuid := range agents {
+			agent_runtime.DispatchV2Event(uuid, v2.MethodAgentMCPRevoke, v2.MCPRevokeParams{LeaseID: leaseID})
+		}
 	}
 	remote.CloseMCPLeaseSessions(leaseID)
 }
