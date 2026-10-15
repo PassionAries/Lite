@@ -183,6 +183,12 @@ func loadLiveLease(id string, now time.Time) (models.MCPLease, error) {
 
 func leaseContainsNode(lease models.MCPLease, uuid string) bool {
 	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return false
+	}
+	if lease.AllNodes {
+		return true
+	}
 	for _, item := range parseTargetUUIDs(lease.TargetUUIDs) {
 		if item == uuid {
 			return true

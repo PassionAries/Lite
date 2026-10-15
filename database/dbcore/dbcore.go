@@ -28,10 +28,20 @@ import (
 // zipDirectoryExcluding 将 srcDir 打包为 dstZip，exclude 是绝对路径集合需要排除。
 // 实例密钥只以 zip 根目录 lite-instance.key 出现一次，内容来自当前实例密钥路径。
 func zipDirectoryExcluding(srcDir, dstZip string, exclude map[string]struct{}) error {
+	return zipDirectoryWithFiles(srcDir, dstZip, exclude, nil)
+}
+
+// zipDirectoryWithFiles substitutes snapshot entries without opening their live
+// counterparts. Closing a plain file descriptor can drop SQLite's POSIX locks.
+func zipDirectoryWithFiles(srcDir, dstZip string, exclude map[string]struct{}, extraFiles map[string]string) error {
 	normExclude := make(map[string]struct{}, len(exclude))
+	var excludedFiles []os.FileInfo
 	for p := range exclude {
 		abs, _ := filepath.Abs(p)
 		normExclude[abs] = struct{}{}
+		if info, err := os.Stat(abs); err == nil {
+			excludedFiles = append(excludedFiles, info)
+		}
 	}
 
 	tmpZip := dstZip + ".partial"
@@ -61,6 +71,21 @@ func zipDirectoryExcluding(srcDir, dstZip string, exclude map[string]struct{}) e
 			}
 			return nil
 		}
+		// A symlink/hardlink alias must not reopen an excluded live SQLite inode.
+		identity := info
+		if info.Mode()&os.ModeSymlink != 0 {
+			if target, err := os.Stat(path); err == nil {
+				identity = target
+			}
+		}
+		for _, excluded := range excludedFiles {
+			if os.SameFile(identity, excluded) {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
 		rel, err := filepath.Rel(absSrc, path)
 		if err != nil {
 			return err
@@ -72,29 +97,25 @@ func zipDirectoryExcluding(srcDir, dstZip string, exclude map[string]struct{}) e
 			return nil
 		}
 		zipName := filepath.ToSlash(rel)
+		if _, replaced := extraFiles[zipName]; replaced {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if info.IsDir() {
 			_, err := zw.Create(zipName + "/")
 			return err
 		}
-		fh, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		w, err := zw.Create(zipName)
-		if err != nil {
-			fh.Close()
-			return err
-		}
-		_, copyErr := io.Copy(w, fh)
-		closeErr := fh.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		return closeErr
+		return writeZipFile(zw, zipName, path)
 	})
 	if walkErr != nil {
 		zw.Close()
 		return walkErr
+	}
+	if err := writeExtraZipFiles(zw, extraFiles); err != nil {
+		zw.Close()
+		return err
 	}
 	encoded, err := instanceKeyForArchive(srcDir)
 	if err != nil {
@@ -770,13 +791,17 @@ func backupOnVersionUpgrade() {
 		return
 	}
 
-	// 需要备份（升级或从旧稳定版首次带版本标记启动）。
-	// 先做一次 WAL checkpoint，确保 lite.db 主文件包含最新数据，
-	// 避免备份出的库缺少仍留在 -wal 中的写入。
-	if instance != nil {
-		instance.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+	// Snapshot through the existing SQLite connection. Reading/closing the live
+	// database or SHM with os.File would release this process's POSIX locks.
+	if instance == nil {
+		logger.Errorf("dbcore", "[upgrade-backup] main database is not initialized")
+		return
 	}
-
+	sqlDB, err := instance.DB()
+	if err != nil {
+		logger.Errorf("dbcore", "[upgrade-backup] failed to get main database connection: %v", err)
+		return
+	}
 	if err := os.MkdirAll("./backup", 0755); err != nil {
 		logger.Errorf("dbcore", "[upgrade-backup] failed to create backup dir: %v", err)
 		return
@@ -784,7 +809,7 @@ func backupOnVersionUpgrade() {
 	tsName := time.Now().UTC().Format("20060102-150405")
 	bakPath := filepath.Join("./backup", fmt.Sprintf("upgrade-%s.zip", tsName))
 	backupZipPath := filepath.Join(".", "data", "backup.zip")
-	if zipErr := zipDirectoryExcluding("./data", bakPath, map[string]struct{}{backupZipPath: {}}); zipErr != nil {
+	if zipErr := createUpgradeBackup(sqlDB, "./data", bakPath, map[string]struct{}{backupZipPath: {}}); zipErr != nil {
 		logger.Errorf("dbcore", "[upgrade-backup] failed to backup ./data before upgrade (from %q to %q): %v", prevVersion, versionID, zipErr)
 		return
 	}

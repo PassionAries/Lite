@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -18,7 +17,6 @@ import (
 	"github.com/nuomiiiii/lite/pkg/rpc"
 	"github.com/nuomiiiii/lite/web/api"
 	"github.com/nuomiiiii/lite/web/api/remote"
-	"github.com/nuomiiiii/lite/web/passkey"
 	"github.com/nuomiiiii/lite/web/remotectl"
 	"github.com/nuomiiiii/lite/web/security"
 )
@@ -32,6 +30,7 @@ func RegisterAdmin(g gin.IRouter) {
 	g.POST("/mcp/authorization-requests/:id/deny", denyAuthorization)
 	g.GET("/mcp/leases", listLeases)
 	g.GET("/mcp/leases/:id", getLease)
+	g.POST("/mcp/leases/:id", updateLease)
 	g.POST("/mcp/leases/:id/revoke", revokeLease)
 	g.POST("/mcp/leases/revoke-all", revokeAllLeases)
 	g.GET("/mcp/operations", listOperations)
@@ -260,38 +259,18 @@ func approveAuthorization(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Password        string          `json:"password"`
-		OTP             string          `json:"otp"`
-		TwoFA           string          `json:"2fa_code"`
-		CeremonyID      string          `json:"ceremony_id"`
-		Credential      json.RawMessage `json:"credential"`
-		TargetUUIDs     []string        `json:"target_uuids"`
-		DurationMinutes any             `json:"duration_minutes"`
-		LongTerm        *bool           `json:"long_term"`
-		Note            string          `json:"note"`
+		adminReauthorization
+		TargetUUIDs     []string `json:"target_uuids"`
+		AllNodes        bool     `json:"all_nodes"`
+		DurationMinutes any      `json:"duration_minutes"`
+		LongTerm        *bool    `json:"long_term"`
+		Note            string   `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		api.RespondError(c, http.StatusBadRequest, "invalid authorization request")
 		return
 	}
-	otp := body.OTP
-	if otp == "" {
-		otp = body.TwoFA
-	}
-	var reauthErr error
-	if len(body.Credential) > 0 || body.CeremonyID != "" {
-		reauthErr = remotectl.ReauthorizePasskey(principal.UserUUID, c.ClientIP(), func() error {
-			return passkey.FinishUserAssertion(c, principal.UserUUID, body.CeremonyID, body.Credential)
-		})
-	} else {
-		reauthErr = remotectl.Reauthorize(principal.UserUUID, body.Password, otp, c.ClientIP())
-	}
-	if reauthErr != nil {
-		status := http.StatusForbidden
-		if remotectl.IsRateLimited(reauthErr) {
-			status = http.StatusTooManyRequests
-		}
-		api.RespondError(c, status, reauthErr.Error())
+	if !reauthorizeAdmin(c, principal.UserUUID, body.adminReauthorization) {
 		return
 	}
 	if !mcpEnabled() || !remote.RemoteManagementEnabled() {
@@ -309,7 +288,7 @@ func approveAuthorization(c *gin.Context) {
 		api.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	targets, err := validateTargets(body.TargetUUIDs)
+	targets, err := validateTargetSelection(body.AllNodes, body.TargetUUIDs)
 	if err != nil {
 		api.RespondError(c, http.StatusBadRequest, err.Error())
 		return
@@ -347,6 +326,7 @@ func approveAuthorization(c *gin.Context) {
 		AuthorizationRequestID: req.ID,
 		TokenFamilyID:          familyID,
 		TargetUUIDs:            encodeTargetUUIDs(targets),
+		AllNodes:               body.AllNodes,
 		Mode:                   modeFull,
 		Note:                   strings.TrimSpace(body.Note),
 		MaxConcurrency:         settings.MaxConcurrency,
@@ -450,6 +430,7 @@ func listLeases(c *gin.Context) {
 			"note":            lease.Note,
 			"mode":            lease.Mode,
 			"target_uuids":    parseTargetUUIDs(lease.TargetUUIDs),
+			"all_nodes":       lease.AllNodes,
 			"created_at":      lease.CreatedAt.UTC(),
 			"expires_at":      lease.ExpiresAt.UTC(),
 			"long_term":       lease.LongTerm,
@@ -477,6 +458,7 @@ func getLease(c *gin.Context) {
 		"client_name":     client.ClientName,
 		"note":            lease.Note,
 		"target_uuids":    parseTargetUUIDs(lease.TargetUUIDs),
+		"all_nodes":       lease.AllNodes,
 		"created_at":      lease.CreatedAt.UTC(),
 		"expires_at":      lease.ExpiresAt.UTC(),
 		"long_term":       lease.LongTerm,
@@ -571,6 +553,14 @@ func validateTargets(ids []string) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+func validateTargetSelection(allNodes bool, ids []string) ([]string, error) {
+	if allNodes {
+		// Store the policy, not a snapshot; future eligible nodes are included.
+		return []string{}, nil
+	}
+	return validateTargets(ids)
 }
 
 func urlWithCode(redirectURI, code, state string) (string, error) {

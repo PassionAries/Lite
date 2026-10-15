@@ -673,6 +673,13 @@ func handleRefreshToken(c *gin.Context, values url.Values) {
 	}
 	var pair tokenPair
 	err = database().Transaction(func(tx *gorm.DB) error {
+		// An administrator may have changed the expiry after the initial lookup.
+		if err := tx.Where("id = ?", lease.ID).First(&lease).Error; err != nil {
+			return err
+		}
+		if !leaseLive(lease, now) {
+			return ErrLeaseInactive
+		}
 		result := tx.Model(&models.MCPToken{}).Where("hash = ? AND used = ? AND expires_at > ?", token.Hash, false, now).Update("used", true)
 		if result.Error != nil {
 			return result.Error
@@ -688,6 +695,10 @@ func handleRefreshToken(c *gin.Context, values url.Values) {
 		wait.pair = tokenPair{err: err}
 		if errors.Is(err, ErrTokenReuse) {
 			_ = revokeFamily(token.FamilyID, reasonRefreshReuse)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+			return
+		}
+		if errors.Is(err, ErrLeaseInactive) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
 			return
 		}

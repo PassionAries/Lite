@@ -305,6 +305,10 @@ func enqueueOrSendRemoteRequest(uuid string, params v2.RemoteRequestParams) erro
 func putSessionUnderDeliveryGate(session *remoteSession) error {
 	var putErr error
 	accepted := agent_runtime.GuardRemoteDelivery(RemoteManagementEnabled, func() {
+		if session.mcp && !mcpTerminalAuthorizationValid(session) {
+			putErr = errors.New("MCP authorization is no longer valid for this node")
+			return
+		}
 		putErr = putSession(session)
 	})
 	if !accepted {
