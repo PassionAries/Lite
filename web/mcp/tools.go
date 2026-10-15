@@ -206,10 +206,12 @@ func authorizationPayload(lease models.MCPLease, now time.Time) gin.H {
 }
 
 func listAuthorizedAgents(lease models.MCPLease, query string) (any, error) {
-	ids := parseTargetUUIDs(lease.TargetUUIDs)
-	nodes, err := clients.GetClientBasicInfoByUUIDs(ids)
+	var nodes []models.Client
+	var err error
 	if lease.AllNodes {
 		nodes, err = clients.GetAllClientBasicInfo()
+	} else {
+		nodes, err = clients.GetClientBasicInfoByUUIDs(parseTargetUUIDs(lease.TargetUUIDs))
 	}
 	if err != nil {
 		return nil, err

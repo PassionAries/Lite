@@ -8,6 +8,42 @@ import (
 	v2 "github.com/nuomiiiii/lite/protocol/v2"
 )
 
+func TestRemoveMCPWorkEventsByLeaseIDLeavesOtherGrantsAndCancels(t *testing.T) {
+	v2EventMu.Lock()
+	original := v2EventQueues
+	v2EventQueues = make(map[string]*v2EventQueue)
+	v2EventMu.Unlock()
+	t.Cleanup(func() {
+		v2EventMu.Lock()
+		v2EventQueues = original
+		v2EventMu.Unlock()
+	})
+
+	EnqueueV2Event("node-a", v2.MethodAgentMCPExec, v2.MCPExecParams{TaskID: "keep-me", LeaseID: "lease-a"})
+	EnqueueV2Event("node-a", v2.MethodAgentMCPFile, v2.MCPFileParams{TaskID: "drop-file", LeaseID: "lease-b"})
+	EnqueueV2Event("node-a", v2.MethodAgentMCPCancel, v2.MCPCancelParams{OperationID: "op", LeaseID: "lease-b"})
+	EnqueueV2Event("node-b", v2.MethodAgentMCPExec, v2.MCPExecParams{TaskID: "drop-exec", LeaseID: "lease-b"})
+
+	removed := RemoveMCPWorkEventsByLeaseID("lease-b")
+	if len(removed) != 2 {
+		t.Fatalf("removed = %d, want 2: %+v", len(removed), removed)
+	}
+	leftA := TakeV2Events("node-a", nil, 16)
+	if len(leftA) != 2 {
+		t.Fatalf("node-a remaining = %#v", leftA)
+	}
+	methods := map[string]bool{}
+	for _, event := range leftA {
+		methods[event.Method] = true
+	}
+	if !methods[v2.MethodAgentMCPExec] || !methods[v2.MethodAgentMCPCancel] {
+		t.Fatalf("cancel for the edited grant and unrelated exec must remain: %#v", leftA)
+	}
+	if left := TakeV2Events("node-b", nil, 16); len(left) != 0 {
+		t.Fatalf("node-b exec for lease-b remained: %#v", left)
+	}
+}
+
 func TestRemoveV2EventsByMethodsPreservesUnrelatedEvents(t *testing.T) {
 	v2EventMu.Lock()
 	original := v2EventQueues

@@ -35,10 +35,12 @@ The frontend and backend changes must be released together.
 }
 ```
 
-This replaces the server scope and note. Omit **both** `duration_minutes` and
-`long_term` to preserve the current expiry policy. Otherwise, supply a valid
-duration and an explicit long-term choice using the same limits as approval.
-Temporary duration starts at the time of saving. Long-term mode uses the existing
+This replaces the server scope. Omit `note` to keep the current note; an explicit
+empty string clears it. Omit **both** `duration_minutes` and `long_term` to
+preserve the current expiry policy. If only `duration_minutes` is sent, the
+current long-term flag is kept (a long-term grant stays long-term). Switching to
+a temporary grant requires `long_term: false` and a valid duration. Temporary
+duration starts at the time of saving. Long-term mode uses the existing
 long-term expiry policy.
 
 The endpoint requires a same-origin administrator browser session belonging to
@@ -51,9 +53,12 @@ Unconsumed, unexpired refresh tokens follow the edited expiry atomically; expire
 or consumed tokens are not revived. Access tokens remain short lived and each
 use still checks the live grant. The client does not need to restart OAuth.
 
-Saving interrupts running operations and interactive terminals under this grant.
-Agent delivery and editing share the existing remote-delivery gate, and queued
-requests are checked against the current server scope and expiry before delivery.
+Changing server scope or expiry interrupts running operations, closes interactive
+terminals, and drops undelivered MCP exec/file events for this grant. Note-only
+edits do not interrupt. Agent delivery and editing share the existing
+remote-delivery gate. Queued work is allowed if the node is still in scope and
+the original expiry is not later than the live grant (an extension must not drop
+in-flight work). Terminal write/read/resize re-check the live grant.
 Edits cancel individual operations rather than permanently revoking the grant ID
 on the Agent. Finished work is not rolled back.
 

@@ -389,6 +389,48 @@ func MCPTaskID(event v2.Event) string {
 	return file.OperationID
 }
 
+func MCPEventLeaseID(event v2.Event) string {
+	switch event.Method {
+	case v2.MethodAgentMCPExec:
+		var params v2.MCPExecParams
+		if bindV2EventParams(event.Params, &params) == nil {
+			return params.LeaseID
+		}
+	case v2.MethodAgentMCPFile:
+		var params v2.MCPFileParams
+		if bindV2EventParams(event.Params, &params) == nil {
+			return params.LeaseID
+		}
+	}
+	return ""
+}
+
+// RemoveMCPWorkEventsByLeaseID drops undelivered exec/file work for one grant.
+// Cancel/renew/revoke stay so an in-progress interrupt can still reach the Agent.
+func RemoveMCPWorkEventsByLeaseID(leaseID string) []RemovedV2Event {
+	if leaseID == "" {
+		return nil
+	}
+	v2EventMu.Lock()
+	defer v2EventMu.Unlock()
+	var removed []RemovedV2Event
+	for uuid, q := range v2EventQueues {
+		if q == nil {
+			continue
+		}
+		filtered := q.events[:0]
+		for _, event := range q.events {
+			if (event.Method == v2.MethodAgentMCPExec || event.Method == v2.MethodAgentMCPFile) && MCPEventLeaseID(event) == leaseID {
+				removed = append(removed, RemovedV2Event{UUID: uuid, Event: event})
+				continue
+			}
+			filtered = append(filtered, event)
+		}
+		q.events = filtered
+	}
+	return removed
+}
+
 // RemoveExecEventsByTaskIDs drops queued agent.exec events for these tasks.
 // Already pulled commands are left alone. The caller must hold the remote
 // delivery mutex when this runs beside DispatchV2ExecEvent.

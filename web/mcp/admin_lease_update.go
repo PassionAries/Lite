@@ -70,7 +70,7 @@ func updateLease(c *gin.Context) {
 		AllNodes        bool     `json:"all_nodes"`
 		DurationMinutes any      `json:"duration_minutes"`
 		LongTerm        *bool    `json:"long_term"`
-		Note            string   `json:"note"`
+		Note            *string  `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		api.RespondError(c, http.StatusBadRequest, "invalid authorization policy")
@@ -89,44 +89,29 @@ func updateLease(c *gin.Context) {
 		api.RespondError(c, http.StatusConflict, "only active authorizations can be edited")
 		return
 	}
-	targets, err := validateTargetSelection(body.AllNodes, body.TargetUUIDs)
+	before := lease
+	lease, err = applyLeaseEdit(lease, leaseEditRequest{
+		TargetUUIDs:     body.TargetUUIDs,
+		AllNodes:        body.AllNodes,
+		DurationMinutes: body.DurationMinutes,
+		LongTerm:        body.LongTerm,
+		Note:            body.Note,
+	}, now)
 	if err != nil {
 		api.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if body.DurationMinutes != nil || body.LongTerm != nil {
-		minutes, err := ParseDurationMinutes(body.DurationMinutes)
-		if err == nil {
-			minutes, err = ValidateLeaseDuration(minutes, siteDurationSettings().MaxMinutes)
-		}
-		if err != nil {
-			api.RespondError(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		longTerm, expiresAt, err := authorizationPolicy(body.LongTerm, now, minutes)
-		if err != nil {
-			api.RespondError(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		lease.LongTerm, lease.ExpiresAt = longTerm, expiresAt
-	}
-	note := strings.TrimSpace(body.Note)
-	if utf8.RuneCountInString(note) > 200 {
-		api.RespondError(c, http.StatusBadRequest, "note must be at most 200 characters")
-		return
-	}
-	lease.TargetUUIDs, lease.AllNodes = encodeTargetUUIDs(targets), body.AllNodes
-	lease.Note = note
 	lease.OwnerLoginSessionHash = accounts.SessionLookupKey(loginSession)
+	interrupt := leaseWorkMustStop(before, lease)
 	var saveErr error
 	agent_runtime.DrainRemoteDelivery(func() []agent_runtime.RemovedV2Event {
 		saveErr = saveLeasePolicy(database(), lease, time.Now().UTC())
-		if saveErr == nil {
-			// Do not send agent.mcp.revoke: agents remember revoked lease IDs,
-			// which would also block future work under the edited policy.
-			stopLeaseOperations(lease.ID, false)
+		if saveErr != nil || !interrupt {
+			return nil
 		}
-		return nil
+		// Do not send agent.mcp.revoke: agents remember revoked lease IDs,
+		// which would also block future work under the edited policy.
+		return interruptLeaseWork(lease.ID)
 	})
 	if saveErr != nil {
 		status := http.StatusInternalServerError
@@ -144,6 +129,90 @@ func updateLease(c *gin.Context) {
 		"expires_at": lease.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 	getLease(c)
+}
+
+type leaseEditRequest struct {
+	TargetUUIDs     []string
+	AllNodes        bool
+	DurationMinutes any
+	LongTerm        *bool
+	Note            *string
+}
+
+func boolPtr(value bool) *bool { return &value }
+
+func applyLeaseEdit(lease models.MCPLease, req leaseEditRequest, now time.Time) (models.MCPLease, error) {
+	targets, err := validateTargetSelection(req.AllNodes, req.TargetUUIDs)
+	if err != nil {
+		return lease, err
+	}
+	if req.DurationMinutes != nil || req.LongTerm != nil {
+		longTerm := lease.LongTerm
+		if req.LongTerm != nil {
+			longTerm = *req.LongTerm
+		}
+		minutes := 0
+		if !longTerm {
+			minutes, err = ParseDurationMinutes(req.DurationMinutes)
+			if err == nil {
+				minutes, err = ValidateLeaseDuration(minutes, siteDurationSettings().MaxMinutes)
+			}
+			if err != nil {
+				return lease, err
+			}
+		}
+		nextLong, expiresAt, err := authorizationPolicy(boolPtr(longTerm), now, minutes)
+		if err != nil {
+			return lease, err
+		}
+		lease.LongTerm, lease.ExpiresAt = nextLong, expiresAt
+	}
+	if req.Note != nil {
+		note := strings.TrimSpace(*req.Note)
+		if utf8.RuneCountInString(note) > 200 {
+			return lease, errors.New("note must be at most 200 characters")
+		}
+		lease.Note = note
+	}
+	lease.TargetUUIDs, lease.AllNodes = encodeTargetUUIDs(targets), req.AllNodes
+	return lease, nil
+}
+
+func leaseWorkMustStop(before, after models.MCPLease) bool {
+	if before.AllNodes != after.AllNodes || before.LongTerm != after.LongTerm {
+		return true
+	}
+	if !before.ExpiresAt.Equal(after.ExpiresAt) {
+		return true
+	}
+	if before.AllNodes && after.AllNodes {
+		return false
+	}
+	return !sameTargetSet(before.TargetUUIDs, after.TargetUUIDs)
+}
+
+func sameTargetSet(left, right string) bool {
+	a, b := parseTargetUUIDs(left), parseTargetUUIDs(right)
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, id := range a {
+		seen[id]++
+	}
+	for _, id := range b {
+		seen[id]--
+		if seen[id] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func interruptLeaseWork(leaseID string) []agent_runtime.RemovedV2Event {
+	removed := agent_runtime.RemoveMCPWorkEventsByLeaseID(leaseID)
+	stopLeaseOperations(leaseID, false)
+	return removed
 }
 
 func saveLeasePolicy(db *gorm.DB, lease models.MCPLease, now time.Time) error {

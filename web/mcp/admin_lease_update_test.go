@@ -15,6 +15,7 @@ import (
 	v2 "github.com/nuomiiiii/lite/protocol/v2"
 	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"github.com/nuomiiiii/lite/web/api"
+	"github.com/nuomiiiii/lite/web/api/remote"
 	"gorm.io/gorm"
 )
 
@@ -265,6 +266,100 @@ func TestLeaseEditRejectsNonSessionAndOtherOwners(t *testing.T) {
 func longTermTestLeasePtr(id string, now time.Time) *models.MCPLease {
 	lease := longTermTestLease(id, true, now)
 	return &lease
+}
+
+func TestApplyLeaseEditOmitsKeepNoteAndLongTerm(t *testing.T) {
+	now := time.Now().UTC()
+	lease := longTermTestLease("edit-omit", true, now)
+	lease.Note = "keep-me"
+	lease.AllNodes = true
+	lease.TargetUUIDs = "[]"
+	got, err := applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, DurationMinutes: 90}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Note != "keep-me" || !got.LongTerm || !got.ExpiresAt.Equal(lease.ExpiresAt) || !got.AllNodes {
+		t.Fatalf("omitted note/long_term mutated grant: %+v", got)
+	}
+	if leaseWorkMustStop(lease, got) {
+		t.Fatal("keeping long-term expiry and all-nodes must not interrupt work")
+	}
+	note := "  updated  "
+	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, Note: &note}, now)
+	if err != nil || got.Note != "updated" || leaseWorkMustStop(lease, got) {
+		t.Fatalf("note-only edit should not interrupt: %+v %v", got, err)
+	}
+	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, LongTerm: boolPtr(false), DurationMinutes: 30}, now)
+	if err != nil || got.LongTerm || !leaseWorkMustStop(lease, got) {
+		t.Fatalf("explicit short-term switch must interrupt: %+v %v", got, err)
+	}
+}
+
+func TestLeaseWorkMustStopOnlyOnScopeOrExpiry(t *testing.T) {
+	now := time.Now().UTC()
+	base := longTermTestLease("scope", false, now)
+	base.ExpiresAt = now.Add(time.Hour)
+	same := base
+	same.TargetUUIDs = `["node-b","node-a"]`
+	same.Note = "other"
+	if leaseWorkMustStop(base, same) {
+		t.Fatal("same UUID set in another order is not a scope change")
+	}
+	narrow := base
+	narrow.TargetUUIDs = `["node-a"]`
+	if !leaseWorkMustStop(base, narrow) {
+		t.Fatal("removing a node must interrupt")
+	}
+	wildcard := base
+	wildcard.AllNodes, wildcard.TargetUUIDs = true, "[]"
+	if !leaseWorkMustStop(base, wildcard) {
+		t.Fatal("switching to all-nodes must interrupt")
+	}
+}
+
+func TestInterruptLeaseWorkDropsQueuedExecAndClosesTerminals(t *testing.T) {
+	db := longTermTestDB(t)
+	now := time.Now().UTC()
+	lease := longTermTestLease("editing-queue", true, now)
+	longTermTestCreate(t, db, &lease)
+	uuid := "edit-queue-node"
+	t.Cleanup(func() {
+		agent_runtime.RemoveV2EventQueue(uuid)
+		remote.CloseMCPLeaseSessions(lease.ID)
+	})
+	agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPExec, v2.MCPExecParams{
+		TaskID: "queued-exec", LeaseID: lease.ID, OperationID: "queued-exec", AgentUUID: uuid,
+		ExpiresAt: lease.ExpiresAt,
+	})
+	agent_runtime.EnqueueV2Event(uuid, v2.MethodAgentMCPExec, v2.MCPExecParams{
+		TaskID: "other-exec", LeaseID: "other-lease", OperationID: "other-exec", AgentUUID: uuid,
+		ExpiresAt: lease.ExpiresAt,
+	})
+	removed := interruptLeaseWork(lease.ID)
+	if len(removed) != 1 || agent_runtime.MCPEventLeaseID(removed[0].Event) != lease.ID {
+		t.Fatalf("queued work for this grant was not dropped: %+v", removed)
+	}
+	events := agent_runtime.TakeV2Events(uuid, nil, 10)
+	if len(events) != 1 || events[0].Method != v2.MethodAgentMCPExec || agent_runtime.MCPTaskID(events[0]) != "other-exec" {
+		t.Fatalf("unrelated queued work changed: %+v", events)
+	}
+}
+
+func TestMCPDispatchMatchesLeaseAfterExpiryExtension(t *testing.T) {
+	now := time.Now().UTC()
+	lease := models.MCPLease{AllNodes: true, ExpiresAt: now.Add(2 * time.Hour)}
+	old := now.Add(time.Hour)
+	if !mcpDispatchMatchesLease(lease, "future-node", old) {
+		t.Fatal("extended grant must still deliver work issued with the earlier expiry")
+	}
+	if mcpDispatchMatchesLease(lease, "future-node", now.Add(3*time.Hour)) {
+		t.Fatal("work claiming to outlive the grant must be rejected")
+	}
+	lease.AllNodes = false
+	lease.TargetUUIDs = `["kept"]`
+	if mcpDispatchMatchesLease(lease, "removed", old) {
+		t.Fatal("narrowed grant must not match a removed node")
+	}
 }
 
 func TestEmbeddedAdminReauthorizationStillDecodesCredentials(t *testing.T) {

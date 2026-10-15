@@ -3,6 +3,7 @@ package mcp
 import (
 	"time"
 
+	"github.com/nuomiiiii/lite/database/models"
 	v2 "github.com/nuomiiiii/lite/protocol/v2"
 	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"github.com/nuomiiiii/lite/web/api/remote"
@@ -47,7 +48,19 @@ func mcpDispatchAllowed(leaseID, uuid string, expiresAt time.Time) bool {
 		return false
 	}
 	lease, err := loadLiveLease(leaseID, time.Now().UTC())
-	return err == nil && leaseContainsNode(lease, uuid) && lease.ExpiresAt.Equal(expiresAt)
+	if err != nil {
+		return false
+	}
+	return mcpDispatchMatchesLease(lease, uuid, expiresAt)
+}
+
+func mcpDispatchMatchesLease(lease models.MCPLease, uuid string, expiresAt time.Time) bool {
+	if !leaseContainsNode(lease, uuid) {
+		return false
+	}
+	// In-flight params may still carry an earlier expiry after an extension.
+	// Reject only work that claims to outlive the current grant.
+	return !expiresAt.After(lease.ExpiresAt)
 }
 
 func mcpMethods() []string {

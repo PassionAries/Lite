@@ -55,6 +55,8 @@ func StartMCPTerminal(uuid, userUUID, loginSession, leaseID string, deadline tim
 	return session.ID, nil
 }
 
+var errMCPTerminalUnauthorized = errors.New("MCP authorization is no longer valid for this node")
+
 func EnsureMCPTerminal(sessionID, leaseID string) error {
 	session := getSession(sessionID)
 	if session == nil || !session.mcp || session.leaseID != leaseID {
@@ -65,6 +67,10 @@ func EnsureMCPTerminal(sessionID, leaseID string) error {
 	session.mu.Unlock()
 	if inactive {
 		return errors.New("terminal has expired")
+	}
+	if !mcpTerminalAuthorizationValid(session) {
+		deleteSession(session.ID)
+		return errMCPTerminalUnauthorized
 	}
 	return nil
 }
@@ -95,6 +101,10 @@ func WriteMCPTerminal(sessionID string, data []byte) error {
 	if session == nil || !session.mcp {
 		return errors.New("terminal not found")
 	}
+	if !mcpTerminalAuthorizationValid(session) {
+		deleteSession(session.ID)
+		return errMCPTerminalUnauthorized
+	}
 	session.mu.Lock()
 	agent := session.Agent
 	session.mu.Unlock()
@@ -110,6 +120,10 @@ func ResizeMCPTerminal(sessionID string, cols, rows int) error {
 	if session == nil || !session.mcp {
 		return errors.New("terminal not found")
 	}
+	if !mcpTerminalAuthorizationValid(session) {
+		deleteSession(session.ID)
+		return errMCPTerminalUnauthorized
+	}
 	session.mu.Lock()
 	agent := session.Agent
 	session.mu.Unlock()
@@ -123,6 +137,10 @@ func ResizeMCPTerminal(sessionID string, cols, rows int) error {
 func ReadMCPTerminal(sessionID string, cursor, maxBytes int) (data []byte, next int, closed bool) {
 	session := getSession(sessionID)
 	if session == nil {
+		return nil, cursor, true
+	}
+	if session.mcp && !mcpTerminalAuthorizationValid(session) {
+		deleteSession(session.ID)
 		return nil, cursor, true
 	}
 	session.mu.Lock()
