@@ -274,7 +274,7 @@ func TestApplyLeaseEditOmitsKeepNoteAndLongTerm(t *testing.T) {
 	lease.Note = "keep-me"
 	lease.AllNodes = true
 	lease.TargetUUIDs = "[]"
-	got, err := applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, DurationMinutes: 90}, now)
+	got, err := applyLeaseEdit(lease, leaseEditRequest{DurationMinutes: 90}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,13 +285,39 @@ func TestApplyLeaseEditOmitsKeepNoteAndLongTerm(t *testing.T) {
 		t.Fatal("keeping long-term expiry and all-nodes must not interrupt work")
 	}
 	note := "  updated  "
-	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, Note: &note}, now)
+	got, err = applyLeaseEdit(lease, leaseEditRequest{Note: &note}, now)
 	if err != nil || got.Note != "updated" || leaseWorkMustStop(lease, got) {
 		t.Fatalf("note-only edit should not interrupt: %+v %v", got, err)
 	}
-	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: true, LongTerm: boolPtr(false), DurationMinutes: 30}, now)
+	got, err = applyLeaseEdit(lease, leaseEditRequest{LongTerm: boolPtr(false), DurationMinutes: 30}, now)
 	if err != nil || got.LongTerm || !leaseWorkMustStop(lease, got) {
 		t.Fatalf("explicit short-term switch must interrupt: %+v %v", got, err)
+	}
+}
+
+func TestApplyLeaseEditOmitsKeepServerScope(t *testing.T) {
+	now := time.Now().UTC()
+	lease := longTermTestLease("edit-scope", true, now)
+	lease.AllNodes = false
+	lease.TargetUUIDs = `["node-a","node-b"]`
+	note := "keep-scope"
+	got, err := applyLeaseEdit(lease, leaseEditRequest{Note: &note}, now)
+	if err != nil || got.AllNodes || got.TargetUUIDs != lease.TargetUUIDs || got.Note != "keep-scope" {
+		t.Fatalf("omitted scope mutated grant: %+v %v", got, err)
+	}
+	if _, err := applyLeaseEdit(lease, leaseEditRequest{TargetUUIDs: stringSlicePtr(nil)}, now); err == nil {
+		t.Fatal("empty explicit list must not become all servers")
+	}
+	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: boolPtr(false)}, now)
+	if err != nil || got.AllNodes || got.TargetUUIDs != lease.TargetUUIDs {
+		t.Fatalf("all_nodes false without a list should keep the allowlist: %+v %v", got, err)
+	}
+	got, err = applyLeaseEdit(lease, leaseEditRequest{AllNodes: boolPtr(true)}, now)
+	if err != nil || !got.AllNodes || got.TargetUUIDs != "[]" {
+		t.Fatalf("explicit all-nodes should replace the allowlist: %+v %v", got, err)
+	}
+	if _, err := applyLeaseEdit(got, leaseEditRequest{AllNodes: boolPtr(false)}, now); err == nil {
+		t.Fatal("leaving all-nodes without a replacement list must be rejected")
 	}
 }
 
@@ -354,6 +380,9 @@ func TestMCPDispatchMatchesLeaseAfterExpiryExtension(t *testing.T) {
 	}
 	if mcpDispatchMatchesLease(lease, "future-node", now.Add(3*time.Hour)) {
 		t.Fatal("work claiming to outlive the grant must be rejected")
+	}
+	if mcpDispatchMatchesLease(lease, "future-node", time.Time{}) {
+		t.Fatal("work without an expiry must be rejected")
 	}
 	lease.AllNodes = false
 	lease.TargetUUIDs = `["kept"]`

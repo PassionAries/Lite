@@ -16,6 +16,7 @@ func TestNormalizeDashboardSettingsDefaults(t *testing.T) {
 	normalized, err := normalizeDashboardSettings(dashboardSettings{}, false)
 	require.NoError(t, err)
 	assert.Equal(t, dashboardPresetOverview, normalized.Preset)
+	assert.Equal(t, dashboardDefaultTimezone, normalized.Timezone)
 	assert.Equal(t, 30, normalized.RefreshSeconds)
 	assert.Equal(t, 30, normalized.ChartRefreshSeconds)
 	assert.Equal(t, 5, normalized.RankingLimit)
@@ -288,4 +289,40 @@ func TestParseDashboardSectionsDefaultsAndFilters(t *testing.T) {
 	assert.True(t, dashboardChartNeedsPingTasks(dashboardChartLatency))
 	assert.True(t, dashboardChartNeedsPingTasks(dashboardChartLatencyJitter))
 	assert.True(t, dashboardChartNeedsPingTasks(dashboardChartPacketLoss))
+}
+
+func TestNormalizeDashboardSettingsKeepsTimezoneAcrossPresets(t *testing.T) {
+	normalized, err := normalizeDashboardSettings(dashboardSettings{
+		Preset:   dashboardPresetOverview,
+		Timezone: "UTC",
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, dashboardPresetOverview, normalized.Preset)
+	assert.Equal(t, "UTC", normalized.Timezone)
+
+	custom, err := normalizeDashboardSettings(dashboardSettings{
+		Preset: dashboardPresetCustom,
+		Modules: []dashboardModuleSetting{
+			{ID: dashboardModuleAlerts, Enabled: true},
+		},
+		RefreshSeconds:      30,
+		ChartRefreshSeconds: 30,
+		RankingLimit:        5,
+		Timezone:            "America/New_York",
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, "America/New_York", custom.Timezone)
+
+	_, err = normalizeDashboardSettings(dashboardSettings{
+		Preset:   dashboardPresetOverview,
+		Timezone: "Not/AZone",
+	}, true)
+	require.Error(t, err)
+
+	fallback, err := normalizeDashboardSettings(dashboardSettings{
+		Preset:   dashboardPresetOverview,
+		Timezone: "Not/AZone",
+	}, false)
+	require.NoError(t, err)
+	assert.Equal(t, dashboardDefaultTimezone, fallback.Timezone)
 }

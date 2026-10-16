@@ -12,10 +12,18 @@ var BeijingLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 // SameBeijingDate compares calendar dates in Asia/Shanghai.
 
+// DayIn returns midnight of loc's calendar day containing value.
+func DayIn(loc *time.Location, value time.Time) time.Time {
+	if loc == nil {
+		loc = BeijingLocation
+	}
+	local := value.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}
+
 // BeijingDay returns midnight of the Asia/Shanghai calendar day containing value.
 func BeijingDay(value time.Time) time.Time {
-	local := value.In(BeijingLocation)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, BeijingLocation)
+	return DayIn(BeijingLocation, value)
 }
 
 // BeijingDayReached reports whether now is on or after expire's Beijing calendar day.

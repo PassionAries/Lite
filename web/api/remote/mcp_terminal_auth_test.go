@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestMCPTerminalIORejectsNodesThatLeftTheGrant(t *testing.T) {
@@ -44,5 +46,43 @@ func TestMCPTerminalIORejectsNodesThatLeftTheGrant(t *testing.T) {
 	}
 	if CountMCPLeaseSessions("lease") != 0 {
 		t.Fatal("unauthorized terminal session was not closed")
+	}
+}
+
+func TestMCPTerminalReadyRejectsExpiredOrNarrowedGrant(t *testing.T) {
+	mcpLeaseValidatorMu.RLock()
+	previous := mcpLeaseValidator
+	mcpLeaseValidatorMu.RUnlock()
+	t.Cleanup(func() { SetMCPTerminalLeaseValidator(previous) })
+
+	allowed := "kept-node"
+	SetMCPTerminalLeaseValidator(func(leaseID, userUUID, nodeUUID string) bool {
+		return leaseID == "lease" && userUUID == "owner" && nodeUUID == allowed
+	})
+
+	now := time.Now()
+	session := &remoteSession{
+		ID: "term-ready", UUID: "kept-node", UserUUID: "owner",
+		mcp: true, leaseID: "lease",
+		ExpiresAt: now.Add(time.Hour), LastActivity: now,
+		Agent: &websocket.Conn{},
+	}
+	if err := putSession(session); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { deleteSession("term-ready") })
+
+	if !MCPTerminalReady("term-ready") {
+		t.Fatal("live grant reported terminal not ready")
+	}
+	session.mu.Lock()
+	session.Agent = nil
+	session.mu.Unlock()
+	allowed = "other-node"
+	if MCPTerminalReady("term-ready") {
+		t.Fatal("narrowed grant still reported terminal ready")
+	}
+	if CountMCPLeaseSessions("lease") != 0 {
+		t.Fatal("unauthorized ready check did not close the terminal")
 	}
 }

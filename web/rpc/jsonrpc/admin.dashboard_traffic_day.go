@@ -72,7 +72,7 @@ func loadCachedDashboardTodayTraffic(day string, now time.Time) ([]dashboardTraf
 func adminGetDashboardTrafficDay(ctx context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
 	rawDay, _ := rpc.GetParamAs[string](req, "day")
 	now := time.Now().UTC()
-	day, err := parseDashboardTrafficDay(rawDay, now)
+	day, err := parseDashboardTrafficDay(rawDay, now, dashboardClock())
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
 	}
@@ -91,16 +91,19 @@ func adminGetDashboardTrafficDay(ctx context.Context, req *rpc.JsonRpcRequest) (
 	}, nil
 }
 
-func parseDashboardTrafficDay(raw string, now time.Time) (time.Time, error) {
+func parseDashboardTrafficDay(raw string, now time.Time, loc *time.Location) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("day is required")
 	}
-	day, err := time.ParseInLocation(time.DateOnly, raw, trafficledger.BeijingLocation)
+	if loc == nil {
+		loc = trafficledger.BeijingLocation
+	}
+	day, err := time.ParseInLocation(time.DateOnly, raw, loc)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid day")
 	}
-	today := trafficledger.BeijingDay(now)
+	today := dashboardDay(now, loc)
 	start := today.AddDate(0, 0, -(trafficledger.DashboardHistoryDays - 1))
 	if day.Before(start) || day.After(today) {
 		return time.Time{}, fmt.Errorf("day is outside the dashboard window")
@@ -114,7 +117,7 @@ func loadDashboardTrafficDay(ctx context.Context, day, now time.Time) ([]dashboa
 		return nil, fmt.Errorf("list dashboard traffic clients: %w", err)
 	}
 	key := day.Format(time.DateOnly)
-	today := trafficledger.BeijingDay(now)
+	today := dashboardDay(now, day.Location())
 	if day.Equal(today) {
 		if items, ok := loadCachedDashboardTodayTraffic(key, now); ok {
 			return items, nil

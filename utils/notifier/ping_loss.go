@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nuomiiiii/lite/database/alertsilence"
 	"github.com/nuomiiiii/lite/database/dbcore"
 	"github.com/nuomiiiii/lite/database/metricstore"
 	"github.com/nuomiiiii/lite/database/models"
@@ -104,16 +106,21 @@ func CheckPingLossNotifications() {
 			}
 		}
 
+		silenced := alertsilence.IsSilencedWithDB(db, alertsilence.KindLatency, strconv.FormatUint(uint64(notification.Id), 10), now)
 		lossSent := true
 		if pingLossActionRequiresSend(lossAction) {
-			if err := sendPingLossNotification(notification, lossStats, now, lossAction); err != nil {
+			if pingSilenceBlocksSend(silenced, lossAction) {
+				lossSent = true
+			} else if err := sendPingLossNotification(notification, lossStats, now, lossAction); err != nil {
 				lossSent = false
 				log.Printf("Failed to send ping loss notification %d: %v", notification.Id, err)
 			}
 		}
 		latencySent := true
 		if pingLatencyActionRequiresSend(latencyEval.Action) {
-			if err := sendPingLatencyNotification(latencyEval.Notification, latencyStats, now, latencyEval.Action); err != nil {
+			if pingLatencySilenceBlocksSend(silenced, latencyEval.Action) {
+				latencySent = true
+			} else if err := sendPingLatencyNotification(latencyEval.Notification, latencyStats, now, latencyEval.Action); err != nil {
 				latencySent = false
 				log.Printf("Failed to send ping latency notification %d: %v", notification.Id, err)
 			}
@@ -333,6 +340,14 @@ func pingHealthPersistentUpdates(
 
 func pingLossActionRequiresSend(action pingLossNotificationAction) bool {
 	return action == pingLossNotificationAlert || action == pingLossNotificationRecovery
+}
+
+func pingSilenceBlocksSend(silenced bool, action pingLossNotificationAction) bool {
+	return silenced && action != pingLossNotificationRecovery
+}
+
+func pingLatencySilenceBlocksSend(silenced bool, action pingLatencyNotificationAction) bool {
+	return silenced && action != pingLatencyNotificationRecovery
 }
 
 func pingLatencyActionRequiresSend(action pingLatencyNotificationAction) bool {

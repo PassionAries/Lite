@@ -50,3 +50,28 @@ func RewriteGitHubURL(rawURL, proxy string) string {
 	}
 	return proxy + "/" + rawURL
 }
+
+// githubProxyPrefix returns the gh-proxy origin when u is already a
+// rewritten GitHub URL (proxy + "/" + https://github...). Empty if not.
+func githubProxyPrefix(u *url.URL) string {
+	if u == nil || IsGitHubHost(u.Hostname()) {
+		return ""
+	}
+	path := u.EscapedPath()
+	if path == "" {
+		path = u.Path
+	}
+	idx := strings.Index(path, "/https://")
+	if idx < 0 {
+		idx = strings.Index(path, "/http://")
+	}
+	if idx < 0 {
+		return ""
+	}
+	inner, err := url.Parse(path[idx+1:])
+	if err != nil || !IsGitHubHost(inner.Hostname()) {
+		return ""
+	}
+	origin := u.Scheme + "://" + u.Host + path[:idx]
+	return strings.TrimRight(origin, "/")
+}

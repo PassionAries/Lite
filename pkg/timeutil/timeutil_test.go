@@ -29,6 +29,18 @@ func TestFormatSystemDateReturnsEmptyForZeroTime(t *testing.T) {
 	}
 }
 
+func TestDayInUsesNamedTimezoneMidnight(t *testing.T) {
+	now := time.Date(2026, 7, 31, 20, 0, 0, 0, time.UTC)
+	utcDay := DayIn(time.UTC, now)
+	if utcDay.Format(time.DateOnly) != "2026-07-31" || utcDay.Hour() != 0 || utcDay.Location() != time.UTC {
+		t.Fatalf("utc day = %s", utcDay)
+	}
+	beijingDay := DayIn(BeijingLocation, now)
+	if beijingDay.Format(time.DateOnly) != "2026-08-01" || beijingDay.Hour() != 0 {
+		t.Fatalf("beijing day = %s", beijingDay)
+	}
+}
+
 func TestBeijingDayReachedUsesChinaCalendarNotUTC(t *testing.T) {
 	expire := time.Date(2026, 9, 1, 16, 0, 0, 0, time.UTC) // 2026-09-02 00:00 Beijing
 	before := time.Date(2026, 9, 1, 15, 59, 0, 0, time.UTC)

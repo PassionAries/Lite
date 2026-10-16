@@ -79,6 +79,7 @@ func adminGetDashboardAlertItems(_ context.Context, req *rpc.JsonRpcRequest) (an
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
 	now := time.Now().UTC()
+	loc := dashboardClock()
 	clientByID := make(map[string]models.Client, len(clientList))
 	for _, client := range clientList {
 		clientByID[client.UUID] = client
@@ -87,15 +88,15 @@ func adminGetDashboardAlertItems(_ context.Context, req *rpc.JsonRpcRequest) (an
 	var summary dashboardAlertSummary
 	switch kind {
 	case "offline":
-		summary = buildDashboardOfflineAlerts(clientByID, now)
+		summary = buildDashboardOfflineAlerts(clientByID, now, loc)
 	case "resource":
 		summary = buildDashboardResourceAlerts(clientByID, reports)
 	case "latency_loss":
-		summary = buildDashboardLatencyAlerts(now)
+		summary = buildDashboardLatencyAlerts(now, loc)
 	case "traffic":
 		summary = buildDashboardTrafficAlerts(clientList, reports, now)
 	case "return_route":
-		summary = buildDashboardReturnRouteAlerts(now)
+		summary = buildDashboardReturnRouteAlerts(now, loc)
 	case "billing":
 		summary = buildDashboardBillingAlerts(clientList, now)
 	}
@@ -108,7 +109,7 @@ func adminGetDashboardAlertItems(_ context.Context, req *rpc.JsonRpcRequest) (an
 	return dashboardAlertItemsResponse{Kind: kind, Items: summary.Items, GeneratedAt: now}, nil
 }
 
-func buildDashboardAlerts(clientList []models.Client, now time.Time) dashboardAlertSummaries {
+func buildDashboardAlerts(clientList []models.Client, now time.Time, loc *time.Location) dashboardAlertSummaries {
 	clientByID := make(map[string]models.Client, len(clientList))
 	for _, client := range clientList {
 		clientByID[client.UUID] = client
@@ -116,10 +117,10 @@ func buildDashboardAlerts(clientList []models.Client, now time.Time) dashboardAl
 	reports := agent_runtime.GetLatestReport()
 	return dashboardAlertSummaries{
 		Resource:    buildDashboardResourceAlerts(clientByID, reports),
-		Offline:     buildDashboardOfflineAlerts(clientByID, now),
-		LatencyLoss: buildDashboardLatencyAlerts(now),
+		Offline:     buildDashboardOfflineAlerts(clientByID, now, loc),
+		LatencyLoss: buildDashboardLatencyAlerts(now, loc),
 		Traffic:     buildDashboardTrafficAlerts(clientList, reports, now),
-		ReturnRoute: buildDashboardReturnRouteAlerts(now),
+		ReturnRoute: buildDashboardReturnRouteAlerts(now, loc),
 		Billing:     buildDashboardBillingAlerts(clientList, now),
 	}
 }
@@ -204,7 +205,7 @@ func dashboardResourceValue(report *v2.Report, client models.Client, metricName 
 	}
 }
 
-func buildDashboardOfflineAlerts(clientByID map[string]models.Client, now time.Time) dashboardAlertSummary {
+func buildDashboardOfflineAlerts(clientByID map[string]models.Client, now time.Time, loc *time.Location) dashboardAlertSummary {
 	var notifications []models.OfflineNotification
 	if err := dbcore.GetDBInstance().Where("enable = ?", true).Find(&notifications).Error; err != nil {
 		return dashboardAlertSummary{Error: err.Error()}
@@ -220,7 +221,7 @@ func buildDashboardOfflineAlerts(clientByID map[string]models.Client, now time.T
 			continue
 		}
 		if _, isOnline := online[notification.Client]; isOnline {
-			if notification.LastNotified != nil && sameDashboardDay(*notification.LastNotified, now) {
+			if notification.LastNotified != nil && sameDashboardDay(*notification.LastNotified, now, loc) {
 				result.RecoveredToday++
 			}
 			continue
@@ -237,7 +238,7 @@ func buildDashboardOfflineAlerts(clientByID map[string]models.Client, now time.T
 	return result
 }
 
-func buildDashboardLatencyAlerts(now time.Time) dashboardAlertSummary {
+func buildDashboardLatencyAlerts(now time.Time, loc *time.Location) dashboardAlertSummary {
 	var notifications []models.PingLossNotification
 	if err := dbcore.GetDBInstance().Preload("ClientInfo").Preload("Task").Where("enable = ?", true).Find(&notifications).Error; err != nil {
 		return dashboardAlertSummary{Error: err.Error()}
@@ -256,7 +257,7 @@ func buildDashboardLatencyAlerts(now time.Time) dashboardAlertSummary {
 				setDashboardLatest(&result, "丢包异常", notification.ClientInfo.Name, notification.Client,
 					notification.TaskId, notification.Task.Name, *notification.LastNotified)
 			}
-		} else if notification.LossEnabled && notification.LastNotified != nil && sameDashboardDay(*notification.LastNotified, now) {
+		} else if notification.LossEnabled && notification.LastNotified != nil && sameDashboardDay(*notification.LastNotified, now, loc) {
 			result.RecoveredToday++
 		}
 
@@ -275,7 +276,7 @@ func buildDashboardLatencyAlerts(now time.Time) dashboardAlertSummary {
 				setDashboardLatest(&result, title, notification.ClientInfo.Name, notification.Client,
 					notification.TaskId, notification.Task.Name, *notification.LatencyLastNotified)
 			}
-		} else if notification.LatencyEnabled && notification.LatencyLastNotified != nil && sameDashboardDay(*notification.LatencyLastNotified, now) {
+		} else if notification.LatencyEnabled && notification.LatencyLastNotified != nil && sameDashboardDay(*notification.LatencyLastNotified, now, loc) {
 			result.RecoveredToday++
 		}
 	}
@@ -331,7 +332,7 @@ func buildDashboardTrafficAlerts(clientList []models.Client, reports map[string]
 	return result
 }
 
-func buildDashboardReturnRouteAlerts(now time.Time) dashboardAlertSummary {
+func buildDashboardReturnRouteAlerts(now time.Time, loc *time.Location) dashboardAlertSummary {
 	summary, err := tasks.GetReturnRouteSummary()
 	if err != nil {
 		return dashboardAlertSummary{Error: err.Error()}
@@ -360,8 +361,8 @@ func buildDashboardReturnRouteAlerts(now time.Time) dashboardAlertSummary {
 		}
 		result.Current = len(result.Items)
 	}
-	dayStart := trafficledger.BeijingDay(now).UTC()
-	dayEnd := trafficledger.BeijingDay(now).AddDate(0, 0, 1).UTC()
+	dayStart := dashboardDay(now, loc).UTC()
+	dayEnd := dashboardDay(now, loc).AddDate(0, 0, 1).UTC()
 	recoveries, err := tasks.QueryReturnRouteEvents(tasks.ReturnRouteEventQuery{
 		Page: 1, PageSize: 1, Kind: "recovery", Start: &dayStart, End: &dayEnd,
 	})
@@ -455,6 +456,6 @@ func setDashboardLatest(summary *dashboardAlertSummary, title, nodeName, nodeUUI
 	}
 }
 
-func sameDashboardDay(left, right time.Time) bool {
-	return trafficledger.BeijingDay(left).Equal(trafficledger.BeijingDay(right))
+func sameDashboardDay(left, right time.Time, loc *time.Location) bool {
+	return dashboardDay(left, loc).Equal(dashboardDay(right, loc))
 }

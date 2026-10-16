@@ -10,6 +10,7 @@ import (
 	"github.com/nuomiiiii/lite/database/notificationdefaults"
 	"github.com/nuomiiiii/lite/pkg/rpc"
 	"github.com/nuomiiiii/lite/utils/notifier"
+	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 	"gorm.io/gorm/clause"
 )
 
@@ -24,6 +25,8 @@ func init() {
 	reg("getAllLoadNotifications", adminGetAllLoadNotifications, "List all load notifications")
 	reg("listCurrentLoadAlerts", adminListCurrentLoadAlerts, "List active load alerts")
 	reg("setLoadAlertSilence", adminSetLoadAlertSilence, "Silence or unsilence an active load alert")
+	reg("listAlertCenter", adminListAlertCenter, "List current alerts and active silences")
+	reg("setAlertCenterSilence", adminSetAlertCenterSilence, "Silence or unsilence an alert from the alert center")
 	// offline notifications
 	reg("listOfflineNotifications", adminListOfflineNotifications, "List offline notifications")
 	reg("editOfflineNotification", adminEditOfflineNotification, "Edit offline notifications")
@@ -127,6 +130,42 @@ func adminListCurrentLoadAlerts(_ context.Context, _ *rpc.JsonRpcRequest) (any, 
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
 	return list, nil
+}
+
+func adminListAlertCenter(_ context.Context, _ *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	online := make(map[string]struct{})
+	for _, clientID := range agent_runtime.GetAllOnlineUUIDs() {
+		online[clientID] = struct{}{}
+	}
+	list, err := notification.ListAlertCenter(time.Now().UTC(), online)
+	if err != nil {
+		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
+	}
+	if list == nil {
+		list = []notification.AlertCenterItem{}
+	}
+	return list, nil
+}
+
+func adminSetAlertCenterSilence(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {
+	var params struct {
+		Kind   string `json:"kind"`
+		ID     string `json:"id"`
+		Target string `json:"target"`
+		Label  string `json:"label"`
+		Mode   string `json:"mode"`
+	}
+	if err := req.BindParams(&params); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, "Invalid request data", nil)
+	}
+	target := params.Target
+	if target == "" {
+		target = params.ID
+	}
+	if err := notification.SetAlertCenterSilence(params.Kind, target, params.Label, params.Mode, time.Now().UTC()); err != nil {
+		return nil, rpc.MakeError(rpc.InvalidParams, err.Error(), nil)
+	}
+	return nil, nil
 }
 
 func adminSetLoadAlertSilence(_ context.Context, req *rpc.JsonRpcRequest) (any, *rpc.JsonRpcError) {

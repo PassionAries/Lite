@@ -561,8 +561,16 @@ func DailyAdjustments(ctx context.Context, db *gorm.DB, startDay, endDay time.Ti
 }
 
 func ApplyHourlyAdjustment(hours []HourlyUsage, adjustment SignedUsage, now time.Time) []HourlyUsage {
+	return ApplyHourlyAdjustmentIn(hours, adjustment, now, BeijingLocation)
+}
+
+func ApplyHourlyAdjustmentIn(hours []HourlyUsage, adjustment SignedUsage, now time.Time, loc *time.Location) []HourlyUsage {
+	if loc == nil {
+		loc = BeijingLocation
+	}
 	result := append([]HourlyUsage(nil), hours...)
-	currentHour := now.In(BeijingLocation).Truncate(time.Hour)
+	local := now.In(loc)
+	currentHour := time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, loc)
 	if len(result) == 0 {
 		result = append(result, HourlyUsage{Hour: currentHour})
 	}

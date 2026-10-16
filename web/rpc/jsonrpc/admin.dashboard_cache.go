@@ -220,8 +220,9 @@ func buildDashboardCached(ctx context.Context, now time.Time, sections dashboard
 	}
 	if sections&dashboardSectionAlerts != 0 {
 		g.Go(func() error {
-			value, loadErr := dashboardAlertsModuleCache.get(gctx, now, "alerts", cacheTTL,
-				func() (dashboardAlertSummaries, error) { return buildDashboardAlerts(clientList, now), nil })
+			loc := dashboardClock()
+			value, loadErr := dashboardAlertsModuleCache.get(gctx, now, "alerts|"+loc.String(), cacheTTL,
+				func() (dashboardAlertSummaries, error) { return buildDashboardAlerts(clientList, now, loc), nil })
 			if loadErr != nil {
 				return loadErr
 			}
@@ -287,9 +288,10 @@ func buildDashboardChartsCached(ctx context.Context, now time.Time, sections das
 
 	if sections&dashboardChartTraffic != 0 {
 		g.Go(func() error {
-			value, loadErr := dashboardTrafficModuleCache.get(gctx, now, key, cacheTTL,
+			loc := dashboardClock()
+			value, loadErr := dashboardTrafficModuleCache.get(gctx, now, loc.String()+"|"+key, cacheTTL,
 				func() (dashboardTrafficSummary, error) {
-					return loadDashboardTraffic(gctx, clientList, now, rankingLimit)
+					return loadDashboardTraffic(gctx, clientList, now, rankingLimit, loc)
 				})
 			if loadErr != nil {
 				traffic = dashboardTrafficSummary{Error: loadErr.Error()}

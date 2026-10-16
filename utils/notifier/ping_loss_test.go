@@ -18,6 +18,15 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func TestPingSilenceBlocksAlertsButNotRecovery(t *testing.T) {
+	assert.False(t, pingSilenceBlocksSend(false, pingLossNotificationAlert))
+	assert.True(t, pingSilenceBlocksSend(true, pingLossNotificationAlert))
+	assert.False(t, pingSilenceBlocksSend(true, pingLossNotificationRecovery))
+	assert.True(t, pingLatencySilenceBlocksSend(true, pingLatencyNotificationAlertHigh))
+	assert.True(t, pingLatencySilenceBlocksSend(true, pingLatencyNotificationPersist))
+	assert.False(t, pingLatencySilenceBlocksSend(true, pingLatencyNotificationRecovery))
+}
+
 func TestEvaluatePingLossNotification(t *testing.T) {
 	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 	notification := models.PingLossNotification{

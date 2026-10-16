@@ -413,7 +413,7 @@ func TestSummarizeDashboardTrafficExcludesFreeClientsFromBilling(t *testing.T) {
 	}, map[string][]trafficledger.HourlyUsage{
 		"a": {{Hour: trafficledger.BeijingDay(now).Add(2 * time.Hour), Usage: trafficledger.Usage{Up: 100, Down: 40}}},
 		"b": {{Hour: trafficledger.BeijingDay(now).Add(3 * time.Hour), Usage: trafficledger.Usage{Up: 20, Down: 80}}},
-	}, nil, now, 5)
+	}, nil, now, trafficledger.BeijingLocation, 5)
 
 	if !summary.HistoryReady {
 		t.Fatal("complete dashboard history reported as incomplete")
@@ -456,6 +456,7 @@ func TestSummarizeDashboardTrafficMarksMissingHistory(t *testing.T) {
 		nil,
 		nil,
 		time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC),
+		trafficledger.BeijingLocation,
 		5,
 	)
 	if summary.HistoryReady {
@@ -480,6 +481,7 @@ func TestSummarizeDashboardTrafficUsesCalibratedDailyAndHourlyValues(t *testing.
 			"a\x00" + todayKey:  {Up: 5, Down: -10},
 		},
 		now,
+		trafficledger.BeijingLocation,
 		5,
 	)
 
@@ -521,9 +523,9 @@ func TestDashboardTrafficDayItemsApplyPerServerBilling(t *testing.T) {
 
 func TestParseDashboardTrafficDayRejectsOutsideWindow(t *testing.T) {
 	now := time.Date(2026, 9, 15, 4, 0, 0, 0, time.UTC)
-	_, err := parseDashboardTrafficDay("2026-07-01", now)
+	_, err := parseDashboardTrafficDay("2026-07-01", now, trafficledger.BeijingLocation)
 	require.Error(t, err)
-	day, err := parseDashboardTrafficDay("2026-09-15", now)
+	day, err := parseDashboardTrafficDay("2026-09-15", now, trafficledger.BeijingLocation)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-09-15", day.Format(time.DateOnly))
 }
@@ -531,4 +533,58 @@ func TestParseDashboardTrafficDayRejectsOutsideWindow(t *testing.T) {
 func TestDashboardDefaultBillingTrendSpanIsHalfWidth(t *testing.T) {
 	assert.Equal(t, 6, dashboardDefaultModuleSpan(dashboardModuleBillingTrend))
 	assert.Equal(t, 3, dashboardDefaultModuleSpan(dashboardModuleTraffic30dSummary))
+}
+
+func TestSummarizeDashboardTrafficCutsTodayInConfiguredTimezone(t *testing.T) {
+	now := time.Date(2026, 7, 31, 20, 0, 0, 0, time.UTC)
+	summary := summarizeDashboardTraffic(
+		[]models.Client{{UUID: "a", Price: 1, TrafficLimitType: "sum"}},
+		nil,
+		map[string]trafficledger.Usage{"a": {Up: 8, Down: 2}},
+		map[string][]trafficledger.HourlyUsage{
+			"a": {{Hour: now.Add(-time.Hour), Usage: trafficledger.Usage{Up: 8, Down: 2}}},
+		},
+		nil,
+		now,
+		time.UTC,
+		5,
+	)
+	assert.Equal(t, "2026-07-31", summary.Daily[len(summary.Daily)-1].Day)
+	assert.Equal(t, now.In(time.UTC).Hour()+1, len(summary.Hourly))
+	assert.Equal(t, int64(8), summary.TodayUp)
+	assert.Equal(t, int64(2), summary.TodayDown)
+
+	beijing := summarizeDashboardTraffic(
+		[]models.Client{{UUID: "a", Price: 1, TrafficLimitType: "sum"}},
+		nil,
+		map[string]trafficledger.Usage{"a": {Up: 8, Down: 2}},
+		map[string][]trafficledger.HourlyUsage{
+			"a": {{Hour: now.Add(-time.Hour), Usage: trafficledger.Usage{Up: 8, Down: 2}}},
+		},
+		nil,
+		now,
+		trafficledger.BeijingLocation,
+		5,
+	)
+	assert.Equal(t, "2026-08-01", beijing.Daily[len(beijing.Daily)-1].Day)
+	assert.Equal(t, now.In(trafficledger.BeijingLocation).Hour()+1, len(beijing.Hourly))
+}
+
+func TestParseDashboardTrafficDayUsesConfiguredTimezoneWindow(t *testing.T) {
+	now := time.Date(2026, 7, 31, 20, 0, 0, 0, time.UTC)
+	utcDay, err := parseDashboardTrafficDay("2026-07-31", now, time.UTC)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-07-31", utcDay.Format(time.DateOnly))
+	_, err = parseDashboardTrafficDay("2026-08-01", now, time.UTC)
+	require.Error(t, err)
+	beijingDay, err := parseDashboardTrafficDay("2026-08-01", now, trafficledger.BeijingLocation)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-08-01", beijingDay.Format(time.DateOnly))
+}
+
+func TestSameDashboardDayUsesConfiguredTimezone(t *testing.T) {
+	left := time.Date(2026, 7, 31, 20, 0, 0, 0, time.UTC)
+	right := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
+	assert.False(t, sameDashboardDay(left, right, time.UTC))
+	assert.True(t, sameDashboardDay(left, right, trafficledger.BeijingLocation))
 }

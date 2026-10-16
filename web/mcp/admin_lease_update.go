@@ -66,11 +66,11 @@ func updateLease(c *gin.Context) {
 	}
 	var body struct {
 		adminReauthorization
-		TargetUUIDs     []string `json:"target_uuids"`
-		AllNodes        bool     `json:"all_nodes"`
-		DurationMinutes any      `json:"duration_minutes"`
-		LongTerm        *bool    `json:"long_term"`
-		Note            *string  `json:"note"`
+		TargetUUIDs     *[]string `json:"target_uuids"`
+		AllNodes        *bool     `json:"all_nodes"`
+		DurationMinutes any       `json:"duration_minutes"`
+		LongTerm        *bool     `json:"long_term"`
+		Note            *string   `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		api.RespondError(c, http.StatusBadRequest, "invalid authorization policy")
@@ -132,8 +132,8 @@ func updateLease(c *gin.Context) {
 }
 
 type leaseEditRequest struct {
-	TargetUUIDs     []string
-	AllNodes        bool
+	TargetUUIDs     *[]string
+	AllNodes        *bool
 	DurationMinutes any
 	LongTerm        *bool
 	Note            *string
@@ -141,10 +141,29 @@ type leaseEditRequest struct {
 
 func boolPtr(value bool) *bool { return &value }
 
+func stringSlicePtr(ids []string) *[]string { return &ids }
+
 func applyLeaseEdit(lease models.MCPLease, req leaseEditRequest, now time.Time) (models.MCPLease, error) {
-	targets, err := validateTargetSelection(req.AllNodes, req.TargetUUIDs)
-	if err != nil {
-		return lease, err
+	if req.AllNodes != nil || req.TargetUUIDs != nil {
+		allNodes := lease.AllNodes
+		if req.AllNodes != nil {
+			allNodes = *req.AllNodes
+		} else {
+			allNodes = false
+		}
+		if allNodes {
+			lease.TargetUUIDs, lease.AllNodes = encodeTargetUUIDs(nil), true
+		} else if req.TargetUUIDs != nil {
+			targets, err := validateTargetSelection(false, *req.TargetUUIDs)
+			if err != nil {
+				return lease, err
+			}
+			lease.TargetUUIDs, lease.AllNodes = encodeTargetUUIDs(targets), false
+		} else if lease.AllNodes {
+			return lease, errTool("select at least one node")
+		} else {
+			lease.AllNodes = false
+		}
 	}
 	if req.DurationMinutes != nil || req.LongTerm != nil {
 		longTerm := lease.LongTerm
@@ -153,13 +172,14 @@ func applyLeaseEdit(lease models.MCPLease, req leaseEditRequest, now time.Time) 
 		}
 		minutes := 0
 		if !longTerm {
-			minutes, err = ParseDurationMinutes(req.DurationMinutes)
+			parsed, err := ParseDurationMinutes(req.DurationMinutes)
 			if err == nil {
-				minutes, err = ValidateLeaseDuration(minutes, siteDurationSettings().MaxMinutes)
+				parsed, err = ValidateLeaseDuration(parsed, siteDurationSettings().MaxMinutes)
 			}
 			if err != nil {
 				return lease, err
 			}
+			minutes = parsed
 		}
 		nextLong, expiresAt, err := authorizationPolicy(boolPtr(longTerm), now, minutes)
 		if err != nil {
@@ -174,7 +194,6 @@ func applyLeaseEdit(lease models.MCPLease, req leaseEditRequest, now time.Time) 
 		}
 		lease.Note = note
 	}
-	lease.TargetUUIDs, lease.AllNodes = encodeTargetUUIDs(targets), req.AllNodes
 	return lease, nil
 }
 

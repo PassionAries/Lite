@@ -16,6 +16,7 @@ import (
 	"github.com/nuomiiiii/lite/database/tasks"
 	"github.com/nuomiiiii/lite/database/trafficledger"
 	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/nuomiiiii/lite/pkg/timeutil"
 	agent_runtime "github.com/nuomiiiii/lite/web/agent"
 )
 
@@ -213,7 +214,7 @@ func adminGetClientTrafficDaily(ctx context.Context, req *rpc.JsonRpcRequest) (a
 		return nil, rpc.MakeError(rpc.InvalidParams, "client not found", nil)
 	}
 	client := list[0]
-	summary, err := loadDashboardTraffic(ctx, list, time.Now().UTC(), 1)
+	summary, err := loadDashboardTraffic(ctx, list, time.Now().UTC(), 1, dashboardClock())
 	if err != nil {
 		return nil, rpc.MakeError(rpc.InternalError, err.Error(), nil)
 	}
@@ -466,8 +467,8 @@ func buildDashboardServers(clientList []models.Client) dashboardServerSummary {
 	return summary
 }
 
-func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now time.Time, rankingLimit int) (dashboardTrafficSummary, error) {
-	today := trafficledger.BeijingDay(now)
+func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now time.Time, rankingLimit int, loc *time.Location) (dashboardTrafficSummary, error) {
+	today := dashboardDay(now, loc)
 	start := today.AddDate(0, 0, -(trafficledger.DashboardHistoryDays - 1))
 	db := dbcore.GetDBInstance()
 	var rows []models.TrafficDailyLedger
@@ -492,11 +493,14 @@ func loadDashboardTraffic(ctx context.Context, clientList []models.Client, now t
 	if err != nil {
 		return dashboardTrafficSummary{}, fmt.Errorf("read today's dashboard traffic: %w", err)
 	}
-	return summarizeDashboardTraffic(clientList, rows, todayUsage, todayHourly, adjustments, now, rankingLimit), nil
+	return summarizeDashboardTraffic(clientList, rows, todayUsage, todayHourly, adjustments, now, loc, rankingLimit), nil
 }
 
-func summarizeDashboardTraffic(clientList []models.Client, rows []models.TrafficDailyLedger, todayUsage map[string]trafficledger.Usage, todayHourly map[string][]trafficledger.HourlyUsage, adjustments map[string]trafficledger.SignedUsage, now time.Time, rankingLimit int) dashboardTrafficSummary {
-	today := trafficledger.BeijingDay(now)
+func summarizeDashboardTraffic(clientList []models.Client, rows []models.TrafficDailyLedger, todayUsage map[string]trafficledger.Usage, todayHourly map[string][]trafficledger.HourlyUsage, adjustments map[string]trafficledger.SignedUsage, now time.Time, loc *time.Location, rankingLimit int) dashboardTrafficSummary {
+	if loc == nil {
+		loc = timeutil.BeijingLocation
+	}
+	today := dashboardDay(now, loc)
 	start := today.AddDate(0, 0, -(trafficledger.DashboardHistoryDays - 1))
 	clientsByID := make(map[string]models.Client, len(clientList))
 	for _, client := range clientList {
@@ -506,7 +510,7 @@ func summarizeDashboardTraffic(clientList []models.Client, rows []models.Traffic
 	daysByKey := make(map[string]*dashboardTrafficDay, trafficledger.DashboardHistoryDays)
 	summary := dashboardTrafficSummary{
 		Daily:  make([]dashboardTrafficDay, 0, trafficledger.DashboardHistoryDays),
-		Hourly: make([]dashboardTrafficHour, now.In(trafficledger.BeijingLocation).Hour()+1),
+		Hourly: make([]dashboardTrafficHour, now.In(loc).Hour()+1),
 	}
 	for hour := range summary.Hourly {
 		summary.Hourly[hour].Hour = fmt.Sprintf("%02d:00", hour)
@@ -565,8 +569,8 @@ func summarizeDashboardTraffic(clientList []models.Client, rows []models.Traffic
 		if rankingBillable > 0 {
 			summary.Ranking = dashboardTopTraffic(summary.Ranking, item, rankingLimit)
 		}
-		for _, hourly := range trafficledger.ApplyHourlyAdjustment(todayHourly[client.UUID], adjustment, now) {
-			hour := hourly.Hour.In(trafficledger.BeijingLocation).Hour()
+		for _, hourly := range trafficledger.ApplyHourlyAdjustmentIn(todayHourly[client.UUID], adjustment, now, loc) {
+			hour := hourly.Hour.In(loc).Hour()
 			if hour >= 0 && hour < len(summary.Hourly) {
 				summary.Hourly[hour].Up += hourly.Up
 				summary.Hourly[hour].Down += hourly.Down

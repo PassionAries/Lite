@@ -226,6 +226,26 @@ func (n PingLossNotification) LatencyAlerting() bool {
 	return state == LatencyAlertHigh || state == LatencyAlertLow
 }
 
+const (
+	AlertKindOffline     = "offline"
+	AlertKindLoad        = "load"
+	AlertKindLatency     = "latency"
+	AlertKindReturnRoute = "return_route"
+)
+
+// AlertSilence stores a mute window for one alert source in the alert center.
+// Load alerts keep silence on LoadNotificationState; other kinds use this table.
+type AlertSilence struct {
+	Kind            string     `json:"kind" gorm:"primaryKey;type:varchar(32)"`
+	Target          string     `json:"target" gorm:"primaryKey;type:varchar(80)"`
+	Label           string     `json:"label" gorm:"type:varchar(255);not null;default:''"`
+	SilencedUntil   *time.Time `json:"silenced_until"`
+	SilencedForever bool       `json:"silenced_forever" gorm:"not null;default:false"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+func (AlertSilence) TableName() string { return "alert_silences" }
+
 func AdaptiveBaselineFingerprint(taskType, target string, baselineWindowSeconds, baselineMinimumSamples int) string {
 	payload := fmt.Sprintf("%s\x1f%s\x1f%d\x1f%d", strings.TrimSpace(taskType), strings.TrimSpace(target), baselineWindowSeconds, baselineMinimumSamples)
 	sum := sha256.Sum256([]byte(payload))

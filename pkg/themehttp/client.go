@@ -22,6 +22,8 @@ const (
 	MaxGitHubJSON int64 = 2 << 20
 
 	maxRedirects = 10
+
+	UserAgent = "Lite (+https://github.com/nuomiiiii/Lite)"
 )
 
 type LookupNetIPFunc func(ctx context.Context, network, host string) ([]netip.Addr, error)
@@ -94,6 +96,14 @@ func (c *Client) initHTTP() {
 			if len(via) >= maxRedirects {
 				return ErrTooManyRedirects
 			}
+			if prefix := githubProxyPrefix(via[0].URL); prefix != "" {
+				rewritten := RewriteGitHubURL(req.URL.String(), prefix)
+				parsed, err := url.Parse(rewritten)
+				if err != nil {
+					return ErrInvalidURL
+				}
+				*req.URL = *parsed
+			}
 			if err := validateParsedURL(req.URL); err != nil {
 				return err
 			}
@@ -103,7 +113,15 @@ func (c *Client) initHTTP() {
 }
 
 func (c *Client) DownloadBytes(ctx context.Context, rawURL string, maxBytes int64) ([]byte, error) {
-	resp, err := c.get(ctx, rawURL)
+	return c.downloadBytes(ctx, rawURL, maxBytes, nil)
+}
+
+func DownloadBytesHeader(ctx context.Context, rawURL string, maxBytes int64, header http.Header) ([]byte, error) {
+	return Default.downloadBytes(ctx, rawURL, maxBytes, header)
+}
+
+func (c *Client) downloadBytes(ctx context.Context, rawURL string, maxBytes int64, header http.Header) ([]byte, error) {
+	resp, err := c.get(ctx, rawURL, header)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +143,7 @@ func (c *Client) DownloadBytes(ctx context.Context, rawURL string, maxBytes int6
 }
 
 func (c *Client) DownloadFile(ctx context.Context, rawURL string, maxBytes int64, prefix string) (string, []byte, error) {
-	resp, err := c.get(ctx, rawURL)
+	resp, err := c.get(ctx, rawURL, nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -169,13 +187,23 @@ func (c *Client) DownloadFile(ctx context.Context, rawURL string, maxBytes int64
 	return tmpPath, hasher.Sum(nil), nil
 }
 
-func (c *Client) get(ctx context.Context, rawURL string) (*http.Response, error) {
+func (c *Client) get(ctx context.Context, rawURL string, extra http.Header) (*http.Response, error) {
 	if _, err := parseRequestURL(rawURL); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, ErrInvalidURL
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	for key, values := range extra {
+		if strings.EqualFold(key, "User-Agent") {
+			continue
+		}
+		req.Header.Del(key)
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -186,7 +214,7 @@ func (c *Client) get(ctx context.Context, rawURL string) (*http.Response, error)
 
 func checkResponse(resp *http.Response, maxBytes int64) error {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%w: %d", ErrHTTPStatus, resp.StatusCode)
+		return fmt.Errorf("%w %d", ErrHTTPStatus, resp.StatusCode)
 	}
 	if resp.ContentLength > maxBytes {
 		return ErrTooLarge

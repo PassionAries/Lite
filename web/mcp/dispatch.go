@@ -55,7 +55,7 @@ func mcpDispatchAllowed(leaseID, uuid string, expiresAt time.Time) bool {
 }
 
 func mcpDispatchMatchesLease(lease models.MCPLease, uuid string, expiresAt time.Time) bool {
-	if !leaseContainsNode(lease, uuid) {
+	if expiresAt.IsZero() || !leaseContainsNode(lease, uuid) {
 		return false
 	}
 	// In-flight params may still carry an earlier expiry after an extension.

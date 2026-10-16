@@ -3,9 +3,11 @@ package tasks
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nuomiiiii/lite/database/alertsilence"
 	"github.com/nuomiiiii/lite/database/dbcore"
 	"github.com/nuomiiiii/lite/database/models"
 	messageevent "github.com/nuomiiiii/lite/database/models/messageEvent"
@@ -927,6 +929,13 @@ func shouldSendReturnRouteEventNotification(task models.ReturnRouteTask, event m
 	}
 }
 
+func returnRouteSilenceBlocksSend(silenced, repeated bool, kind string) bool {
+	if !silenced {
+		return false
+	}
+	return repeated || kind != "recovery"
+}
+
 func shouldSendReturnRouteRepeatNotification(task models.ReturnRouteTask, status models.ReturnRouteStatus, now time.Time) bool {
 	if !task.Notify || status.State != "switched" || strings.TrimSpace(status.CurrentLine) == "" {
 		return false
@@ -1032,6 +1041,10 @@ func sendReturnRouteNotification(task models.ReturnRouteTask, event models.Retur
 		return
 	}
 	now := time.Now().UTC()
+	silenced := alertsilence.IsSilencedWithDB(db, alertsilence.KindReturnRoute, strconv.FormatUint(uint64(task.Id), 10), now)
+	if returnRouteSilenceBlocksSend(silenced, repeated, event.Kind) {
+		return
+	}
 	if repeated {
 		var status models.ReturnRouteStatus
 		if err := db.First(&status, "task_id = ?", task.Id).Error; err != nil || !returnRouteRepeatNotificationDue(status.LastNotifiedAt, currentTask.Cooldown, now) {

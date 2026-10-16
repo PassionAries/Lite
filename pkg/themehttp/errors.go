@@ -15,7 +15,7 @@ var (
 	ErrRedirect          = errors.New("redirect was rejected")
 	ErrTooManyRedirects  = errors.New("too many redirects")
 	ErrTimeout           = errors.New("connection timed out")
-	ErrHTTPStatus        = errors.New("unexpected HTTP status")
+	ErrHTTPStatus        = errors.New("HTTP")
 	ErrEmpty             = errors.New("empty response")
 	ErrTooLarge          = errors.New("response exceeds the size limit")
 	ErrTempFile          = errors.New("failed to write temporary file")

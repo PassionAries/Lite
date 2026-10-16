@@ -1054,6 +1054,7 @@ func doInitialize() error {
 		&models.Clipboard{},
 		&models.LoadNotification{},
 		&models.LoadNotificationState{},
+		&models.AlertSilence{},
 		&models.MetricCleanupJob{},
 		&models.OfflineNotification{},
 		&models.TrafficReportNotification{},

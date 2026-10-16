@@ -117,6 +117,31 @@ func TestPersistLoadClientEvaluationsKeepsSilencedAlertVisibleAndFiltersNotifica
 	assert.Equal(t, &until, states[1].SilencedUntil)
 }
 
+func TestPersistLoadClientEvaluationsQueuesRecoveryWhileSilenced(t *testing.T) {
+	db := newLoadNotifierTestDB(t)
+	require.NoError(t, db.Create(&models.Client{UUID: "client-a", Token: "token-a"}).Error)
+	rule := models.LoadNotification{Name: "CPU", Clients: models.StringArray{"client-a"}, Metric: "cpu", Interval: 15}
+	require.NoError(t, db.Create(&rule).Error)
+	started := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	until := started.Add(24 * time.Hour)
+	require.NoError(t, db.Create(&models.LoadNotificationState{
+		NotificationID: rule.Id, Client: "client-a", AlertActive: true,
+		RuleFingerprint: models.LoadNotificationRuleFingerprint(rule),
+		ActiveSince:     &started, LastEvaluatedAt: started, LastNotified: &started,
+		SilencedUntil: &until,
+	}).Error)
+
+	now := started.Add(time.Hour)
+	notify, current, err := persistLoadClientEvaluationsWithDB(db, rule, []loadClientEvaluation{{client: "client-a"}}, now)
+	require.NoError(t, err)
+	assert.True(t, current)
+	assert.Empty(t, notify)
+	var state models.LoadNotificationState
+	require.NoError(t, db.First(&state, "notification_id = ? AND client = ?", rule.Id, "client-a").Error)
+	assert.False(t, state.AlertActive)
+	assert.True(t, state.RecoveryPending)
+}
+
 func TestPersistLoadClientEvaluationsClearsRecoveredAlertAndStartsNewIncident(t *testing.T) {
 	db := newLoadNotifierTestDB(t)
 	require.NoError(t, db.Create(&models.Client{UUID: "client-a", Token: "token-a"}).Error)

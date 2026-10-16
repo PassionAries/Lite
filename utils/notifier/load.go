@@ -217,7 +217,7 @@ func persistLoadClientEvaluationsWithDB(db *gorm.DB, task models.LoadNotificatio
 					started := now.UTC()
 					state.ActiveSince = &started
 				}
-			} else if previous.AlertActive && previous.LastNotified != nil && !loadAlertStateSilenced(previous, now) {
+			} else if previous.AlertActive && previous.LastNotified != nil {
 				state.RecoveryPending = true
 			} else if !previous.RecoveryPending {
 				state.LastNotified = nil

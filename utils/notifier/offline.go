@@ -2,11 +2,13 @@ package notifier
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	logger "github.com/nuomiiiii/lite/utils/log"
 
+	"github.com/nuomiiiii/lite/database/alertsilence"
 	"github.com/nuomiiiii/lite/database/clients"
 	"github.com/nuomiiiii/lite/database/dbcore"
 	"github.com/nuomiiiii/lite/database/models"
@@ -151,6 +153,9 @@ func OfflineNotification(clientID string, endedConnectionID int64) {
 		// Send notification
 		message := fmt.Sprintf("🔴%s is offline", client.Name)
 		go func(msg string) {
+			if alertsilence.IsSilencedWithDB(dbcore.GetDBInstance(), alertsilence.KindOffline, clientID, time.Now().UTC()) {
+				return
+			}
 			if err := messageSender.SendEvent(models.EventMessage{
 				Kind:    messageSender.KindOffline,
 				Event:   messageevent.Offline,
@@ -185,7 +190,7 @@ func OnlineNotification(clientID string, connectionID int64) {
 	state := getOrInitState(clientID)
 	notifyOnline, duplicate := recordOnlineConnection(state, connectionID)
 
-	_, enabled := getNotificationConfig(clientID)
+	notiConf, enabled := getNotificationConfig(clientID)
 	if !enabled {
 		return
 	}
@@ -198,17 +203,56 @@ func OnlineNotification(clientID string, connectionID int64) {
 	}
 
 	// 规则4：客户端离线足够久已通知（或未待离线），现在重新上线，发送上线通知。
-	message := fmt.Sprintf("🟢%s is online", client.Name)
+	now := time.Now().UTC()
+	message := onlineRecoveryMessageFrom(notiConf, now)
 	go func(msg string) {
 		if err := messageSender.SendEvent(models.EventMessage{
 			Kind:    messageSender.KindOnline,
 			Event:   messageevent.Online,
 			Clients: []models.Client{client},
-			Time:    time.Now().UTC(),
-			//Message: msg,
-			Emoji: "🟢",
+			Time:    now,
+			Message: msg,
+			Emoji:   "🟢",
 		}); err != nil {
 			logger.ErrorArgs("notifier", "Failed to send online notification:", err)
 		}
 	}(message)
+}
+
+func onlineRecoveryMessageFrom(conf *models.OfflineNotification, now time.Time) string {
+	if conf == nil || conf.LastNotified == nil || conf.LastNotified.IsZero() {
+		return ""
+	}
+	return onlineRecoveryMessage(*conf.LastNotified, now)
+}
+
+func onlineRecoveryMessage(offlineSince, now time.Time) string {
+	if offlineSince.IsZero() || now.Before(offlineSince) {
+		return ""
+	}
+	return "离线时间：" + formatChineseDuration(now.Sub(offlineSince))
+}
+
+func formatChineseDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int64(d.Round(time.Second).Seconds())
+	if total < 0 {
+		total = 0
+	}
+	hours := total / 3600
+	minutes := (total % 3600) / 60
+	seconds := total % 60
+	var b strings.Builder
+	if hours > 0 {
+		fmt.Fprintf(&b, "%d小时", hours)
+	}
+	if minutes > 0 {
+		fmt.Fprintf(&b, "%d分钟", minutes)
+	}
+	if seconds > 0 || b.Len() == 0 {
+		fmt.Fprintf(&b, "%d秒", seconds)
+	}
+	return b.String()
 }

@@ -616,6 +616,21 @@ func TestBuildReturnRouteRepeatNotificationOnlyWhileSwitched(t *testing.T) {
 	}
 }
 
+func TestReturnRouteSilenceBlocksAlertsButNotRecovery(t *testing.T) {
+	if returnRouteSilenceBlocksSend(false, false, "switch") {
+		t.Fatal("unmuted switch should send")
+	}
+	if !returnRouteSilenceBlocksSend(true, false, "switch") {
+		t.Fatal("silenced switch should not send")
+	}
+	if !returnRouteSilenceBlocksSend(true, true, "switch") {
+		t.Fatal("silenced repeat should not send")
+	}
+	if returnRouteSilenceBlocksSend(true, false, "recovery") {
+		t.Fatal("silenced recovery should still send")
+	}
+}
+
 func TestReturnRouteNotificationSwitchesAreIndependent(t *testing.T) {
 	tests := []struct {
 		name           string

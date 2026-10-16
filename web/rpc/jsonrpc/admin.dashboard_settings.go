@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"time"
+
 	"github.com/nuomiiiii/lite/database/auditlog"
 	"github.com/nuomiiiii/lite/pkg/config"
 	"github.com/nuomiiiii/lite/pkg/rpc"
+	"github.com/nuomiiiii/lite/pkg/timeutil"
+	"github.com/nuomiiiii/lite/pkg/trafficreset"
 )
 
 const (
@@ -180,6 +184,8 @@ type dashboardModuleSetting struct {
 	Span    int    `json:"span"`
 }
 
+const dashboardDefaultTimezone = "Asia/Shanghai"
+
 type dashboardSettings struct {
 	Preset              string                   `json:"preset"`
 	Modules             []dashboardModuleSetting `json:"modules"`
@@ -187,6 +193,7 @@ type dashboardSettings struct {
 	ChartRefreshSeconds int                      `json:"chart_refresh_seconds"`
 	RankingLimit        int                      `json:"ranking_limit"`
 	LayoutColumns       int                      `json:"layout_columns,omitempty"`
+	Timezone            string                   `json:"timezone"`
 }
 
 func init() {
@@ -230,7 +237,33 @@ func dashboardSettingsForPreset(preset string) dashboardSettings {
 		ChartRefreshSeconds: definition.ChartRefreshSeconds,
 		RankingLimit:        definition.RankingLimit,
 		LayoutColumns:       dashboardGridColumns,
+		Timezone:            dashboardDefaultTimezone,
 	}
+}
+
+func normalizeDashboardTimezone(value string, strict bool) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return dashboardDefaultTimezone, nil
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		if strict {
+			return "", fmt.Errorf("unknown timezone %q", value)
+		}
+		return dashboardDefaultTimezone, nil
+	}
+	return value, nil
+}
+
+func dashboardClock() *time.Location {
+	return trafficreset.Location(loadDashboardSettings().Timezone)
+}
+
+func dashboardDay(now time.Time, loc *time.Location) time.Time {
+	if loc == nil {
+		loc = trafficreset.Location(dashboardDefaultTimezone)
+	}
+	return timeutil.DayIn(loc, now)
 }
 
 func loadDashboardSettings() dashboardSettings {
@@ -269,11 +302,16 @@ func adminSetDashboardSettings(ctx context.Context, req *rpc.JsonRpcRequest) (an
 
 func normalizeDashboardSettings(input dashboardSettings, strict bool) (dashboardSettings, error) {
 	defaults := defaultDashboardSettings()
+	timezone, err := normalizeDashboardTimezone(input.Timezone, strict)
+	if err != nil {
+		return dashboardSettings{}, err
+	}
 	result := dashboardSettings{
 		Preset:              strings.TrimSpace(input.Preset),
 		RefreshSeconds:      input.RefreshSeconds,
 		ChartRefreshSeconds: input.ChartRefreshSeconds,
 		RankingLimit:        input.RankingLimit,
+		Timezone:            timezone,
 	}
 
 	if result.Preset == "" {
@@ -297,7 +335,9 @@ func normalizeDashboardSettings(input dashboardSettings, strict bool) (dashboard
 				return dashboardSettings{}, errors.New("ranking_limit must be 5, 10, 15, or 20")
 			}
 		}
-		return dashboardSettingsForPreset(result.Preset), nil
+		out := dashboardSettingsForPreset(result.Preset)
+		out.Timezone = timezone
+		return out, nil
 	}
 
 	if len(input.Modules) == 0 {

@@ -33,6 +33,41 @@ func TestOfflineStateRejectsStaleConnection(t *testing.T) {
 	}
 }
 
+func TestFormatChineseDuration(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0秒"},
+		{21 * time.Second, "21秒"},
+		{35*time.Minute + 21*time.Second, "35分钟21秒"},
+		{time.Hour + 35*time.Minute + 21*time.Second, "1小时35分钟21秒"},
+		{2*time.Hour + 5*time.Second, "2小时5秒"},
+		{90 * time.Second, "1分钟30秒"},
+		{-time.Second, "0秒"},
+	}
+	for _, tc := range cases {
+		if got := formatChineseDuration(tc.d); got != tc.want {
+			t.Errorf("formatChineseDuration(%v) = %q, want %q", tc.d, got, tc.want)
+		}
+	}
+}
+
+func TestOnlineRecoveryMessage(t *testing.T) {
+	offline := time.Date(2026, 10, 16, 6, 24, 3, 0, time.UTC)
+	online := offline.Add(time.Hour + 35*time.Minute + 21*time.Second)
+	got := onlineRecoveryMessage(offline, online)
+	if got != "离线时间：1小时35分钟21秒" {
+		t.Fatalf("onlineRecoveryMessage = %q", got)
+	}
+	if onlineRecoveryMessage(time.Time{}, online) != "" {
+		t.Fatal("zero offline time should omit duration")
+	}
+	if onlineRecoveryMessage(online, offline) != "" {
+		t.Fatal("future offline time should omit duration")
+	}
+}
+
 func TestReconnectDuringGraceCancelsPreviousOfflineEvent(t *testing.T) {
 	state := &notificationState{isFirstConnection: true}
 	recordOnlineConnection(state, 200)

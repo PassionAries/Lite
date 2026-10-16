@@ -88,12 +88,16 @@ func MCPTerminalAgentUUID(sessionID, leaseID string) (string, error) {
 
 func MCPTerminalReady(sessionID string) bool {
 	session := getSession(sessionID)
-	if session == nil {
+	if session == nil || !session.mcp {
+		return false
+	}
+	if !mcpTerminalAuthorizationValid(session) {
+		deleteSession(session.ID)
 		return false
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	return session.mcp && session.Agent != nil && !session.closed
+	return session.Agent != nil && !session.closed
 }
 
 func WriteMCPTerminal(sessionID string, data []byte) error {

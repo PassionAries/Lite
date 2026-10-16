@@ -35,13 +35,19 @@ The frontend and backend changes must be released together.
 }
 ```
 
-This replaces the server scope. Omit `note` to keep the current note; an explicit
-empty string clears it. Omit **both** `duration_minutes` and `long_term` to
-preserve the current expiry policy. If only `duration_minutes` is sent, the
-current long-term flag is kept (a long-term grant stays long-term). Switching to
-a temporary grant requires `long_term: false` and a valid duration. Temporary
-duration starts at the time of saving. Long-term mode uses the existing
-long-term expiry policy.
+This replaces the server scope when `all_nodes` or `target_uuids` is sent. Omit
+both to keep the current scope. Sending `target_uuids` without `all_nodes` is an
+explicit allowlist; an empty list is rejected and does not become all servers.
+`all_nodes: true` is required for dynamic scope. `all_nodes: false` without a
+replacement list keeps the stored allowlist, or is rejected if the grant was
+all servers.
+
+Omit `note` to keep the current note; an explicit empty string clears it. Omit
+**both** `duration_minutes` and `long_term` to preserve the current expiry
+policy. If only `duration_minutes` is sent, the current long-term flag is kept
+(a long-term grant stays long-term). Switching to a temporary grant requires
+`long_term: false` and a valid duration. Temporary duration starts at the time
+of saving. Long-term mode uses the existing long-term expiry policy.
 
 The endpoint requires a same-origin administrator browser session belonging to
 the grant's owner and fresh password/TOTP or passkey verification, just like
@@ -56,9 +62,10 @@ use still checks the live grant. The client does not need to restart OAuth.
 Changing server scope or expiry interrupts running operations, closes interactive
 terminals, and drops undelivered MCP exec/file events for this grant. Note-only
 edits do not interrupt. Agent delivery and editing share the existing
-remote-delivery gate. Queued work is allowed if the node is still in scope and
-the original expiry is not later than the live grant (an extension must not drop
-in-flight work). Terminal write/read/resize re-check the live grant.
+remote-delivery gate. Queued work is allowed if the node is still in scope, the work carries a
+non-zero expiry, and that expiry is not later than the live grant (an extension
+must not drop in-flight work). Terminal ready/write/read/resize re-check the
+live grant.
 Edits cancel individual operations rather than permanently revoking the grant ID
 on the Agent. Finished work is not rolled back.
 

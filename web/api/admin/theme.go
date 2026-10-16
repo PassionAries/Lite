@@ -475,10 +475,22 @@ func downloadThemeArchive(rawURL string) (string, error) {
 }
 
 func fetchThemeJSON(rawURL string, maxBytes int64) ([]byte, error) {
+	return fetchThemeBytes(rawURL, maxBytes, nil)
+}
+
+func fetchThemeBytes(rawURL string, maxBytes int64, header http.Header) ([]byte, error) {
 	rawURL = applyThemeGitHubProxy(rawURL)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	data, err := themehttp.DownloadBytes(ctx, rawURL, maxBytes)
+	var (
+		data []byte
+		err  error
+	)
+	if header == nil {
+		data, err = themehttp.DownloadBytes(ctx, rawURL, maxBytes)
+	} else {
+		data, err = themehttp.DownloadBytesHeader(ctx, rawURL, maxBytes, header)
+	}
 	if err != nil {
 		if errors.Is(err, themehttp.ErrTooLarge) {
 			return nil, errors.New("响应超过大小限制")
@@ -488,16 +500,8 @@ func fetchThemeJSON(rawURL string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-// getGitHubReleaseDownloadURL 从GitHub API获取最新release的下载链接
-// 该函数通过GitHub API获取指定仓库最新release的资源下载链接
-// 参考API: https://api.github.com/repos/{owner}/{repo}/releases/latest
-// 参数:
-//   - owner: GitHub仓库所有者
-//   - repo: GitHub仓库名称
-//
-// 返回:
-//   - 最新release的第一个资源的下载链接
-//   - 错误信息（如果有）
+// getGitHubReleaseDownloadURL 从 GitHub 仓库页获取最新 release 的下载链接。
+// 走 github.com（可被常见 gh-proxy 转发），不请求 api.github.com。
 func getGitHubReleaseDownloadURL(owner, repo string) (string, error) {
 	release, err := getGitHubLatestRelease(owner, repo)
 	if err != nil {
@@ -516,27 +520,21 @@ func getGitHubLatestRelease(owner, repo string) (gitHubLatestRelease, error) {
 		return gitHubLatestRelease{}, errors.New("GitHub仓库所有者和仓库名称不能为空")
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
-	data, err := fetchThemeJSON(apiURL, themehttp.MaxGitHubJSON)
+	tagName, downloadURL, err := themehttp.ResolveGitHubLatestRelease(owner, repo, func(rawURL string, header http.Header) ([]byte, error) {
+		return fetchThemeBytes(rawURL, themehttp.MaxGitHubJSON, header)
+	})
 	if err != nil {
+		if errors.Is(err, themehttp.ErrNoReleaseAssets) {
+			return gitHubLatestRelease{}, errors.New("GitHub release中没有可下载的资源")
+		}
 		return gitHubLatestRelease{}, fmt.Errorf("获取GitHub release信息失败: %v", err)
 	}
-
-	var releaseInfo struct {
-		TagName string `json:"tag_name"`
-		Assets  []struct {
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.Unmarshal(data, &releaseInfo); err != nil {
-		return gitHubLatestRelease{}, errors.New("解析GitHub API响应失败")
-	}
-	if len(releaseInfo.Assets) == 0 {
+	if downloadURL == "" {
 		return gitHubLatestRelease{}, errors.New("GitHub release中没有可下载的资源")
 	}
 	return gitHubLatestRelease{
-		TagName:     releaseInfo.TagName,
-		DownloadURL: releaseInfo.Assets[0].BrowserDownloadURL,
+		TagName:     tagName,
+		DownloadURL: downloadURL,
 	}, nil
 }
 

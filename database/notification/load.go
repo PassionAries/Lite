@@ -172,9 +172,12 @@ func SetLoadAlertSilence(notificationID uint, client, mode string, now time.Time
 
 func setLoadAlertSilence(db *gorm.DB, notificationID uint, client, mode string, now time.Time) error {
 	client = strings.TrimSpace(client)
-	mode = strings.ToLower(strings.TrimSpace(mode))
 	if notificationID == 0 || client == "" {
 		return fmt.Errorf("notification_id and client are required")
+	}
+	until, forever, err := ParseSilenceMode(mode, now)
+	if err != nil {
+		return err
 	}
 	var state models.LoadNotificationState
 	if err := db.Preload("Notification").Where("notification_id = ? AND client = ?", notificationID, client).First(&state).Error; err != nil {
@@ -183,26 +186,27 @@ func setLoadAlertSilence(db *gorm.DB, notificationID uint, client, mode string, 
 	if !loadAlertStateCurrent(state, now) {
 		return gorm.ErrRecordNotFound
 	}
-	updates := map[string]any{"silenced_until": nil, "silenced_forever": false}
-	switch mode {
-	case "off":
-	case "24h":
-		until := now.UTC().Add(24 * time.Hour)
-		updates["silenced_until"] = until
-	case "3d":
-		until := now.UTC().Add(3 * 24 * time.Hour)
-		updates["silenced_until"] = until
-	case "7d":
-		until := now.UTC().Add(7 * 24 * time.Hour)
-		updates["silenced_until"] = until
-	case "forever":
-		updates["silenced_forever"] = true
-	default:
-		return fmt.Errorf("unsupported silence mode")
-	}
+	updates := map[string]any{"silenced_until": until, "silenced_forever": forever}
 	result := db.Model(&models.LoadNotificationState{}).
 		Where("notification_id = ? AND client = ? AND alert_active = ?", notificationID, client, true).
 		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func clearLoadAlertSilence(db *gorm.DB, notificationID uint, client string) error {
+	client = strings.TrimSpace(client)
+	if notificationID == 0 || client == "" {
+		return fmt.Errorf("notification_id and client are required")
+	}
+	result := db.Model(&models.LoadNotificationState{}).
+		Where("notification_id = ? AND client = ?", notificationID, client).
+		Updates(map[string]any{"silenced_until": nil, "silenced_forever": false})
 	if result.Error != nil {
 		return result.Error
 	}

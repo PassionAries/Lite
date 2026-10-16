@@ -99,6 +99,9 @@ func TestDownloadHTTPAndHTTPSPublicHost(t *testing.T) {
 		if r.Host != "" && !strings.HasPrefix(r.Host, "theme.test") {
 			t.Errorf("Host = %q, want theme.test", r.Host)
 		}
+		if r.UserAgent() != UserAgent {
+			t.Errorf("User-Agent = %q, want %q", r.UserAgent(), UserAgent)
+		}
 		_, _ = w.Write([]byte("theme-ok"))
 	})
 	for _, tlsMode := range []bool{false, true} {
@@ -312,8 +315,37 @@ func TestNon2xxRejected(t *testing.T) {
 	if !errors.Is(err, ErrHTTPStatus) {
 		t.Fatalf("err = %v, want ErrHTTPStatus", err)
 	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Fatalf("err = %v, want HTTP 404", err)
+	}
 	if strings.Contains(err.Error(), "nope") {
 		t.Fatalf("error leaked body: %v", err)
+	}
+}
+
+func TestProxiedGitHubRedirectStaysOnProxy(t *testing.T) {
+	h := newHarness(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RequestURI() {
+		case "/https://github.com/owner/repo/releases/latest":
+			http.Redirect(w, r, "https://github.com/owner/repo/releases/tag/v1.2.8", http.StatusFound)
+		case "/https://github.com/owner/repo/releases/tag/v1.2.8":
+			_, _ = w.Write([]byte(`{"tag_name":"v1.2.8"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}), false)
+	h.lookupMap["github.com"] = []netip.Addr{netip.MustParseAddr("1.1.1.1")}
+	data, err := h.client.DownloadBytes(context.Background(), h.hostURL+"/https://github.com/owner/repo/releases/latest", 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"tag_name":"v1.2.8"}` {
+		t.Fatalf("body = %q", data)
+	}
+	for _, address := range h.dialed {
+		if strings.HasPrefix(address, "1.1.1.1:") {
+			t.Fatalf("followed GitHub redirect off the proxy: dialed %v", h.dialed)
+		}
 	}
 }
 
