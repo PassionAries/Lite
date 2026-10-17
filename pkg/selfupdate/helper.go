@@ -382,10 +382,33 @@ func parseLoopbackHealthURL(rawURL, scheme string) (*url.URL, error) {
 	if parsed.Scheme != scheme || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "/api/version" {
 		return nil, errors.New("health check URL must use the approved scheme and /api/version path")
 	}
-	if parsed.Port() == "" || !isAllowedHealthLoopback(parsed.Hostname()) {
-		return nil, errors.New("health check URL must target 127.0.0.1 or ::1 with an explicit port")
+	if !isAllowedHealthLoopback(parsed.Hostname()) {
+		return nil, errors.New("health check URL must target 127.0.0.1 or ::1")
+	}
+	if _, err := loopbackHealthPort(parsed); err != nil {
+		return nil, err
 	}
 	return parsed, nil
+}
+
+func loopbackHealthPort(parsed *url.URL) (string, error) {
+	if parsed == nil {
+		return "", errors.New("health check URL must target 127.0.0.1 or ::1")
+	}
+	if port := parsed.Port(); port != "" {
+		return port, nil
+	}
+	switch parsed.Scheme {
+	case "http":
+		return "80", nil
+	case "https":
+		// Built-in HTTPS on 443 redirects HTTP to https://127.0.0.1/api/version
+		// with no explicit port. Go treats that as 443; reject it and the
+		// helper rolls back a healthy update.
+		return "443", nil
+	default:
+		return "", errors.New("health check URL must target 127.0.0.1 or ::1")
+	}
 }
 
 func isAllowedHealthLoopback(host string) bool {

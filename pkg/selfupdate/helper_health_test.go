@@ -147,6 +147,39 @@ func TestParseLoopbackHealthURLAllowsIPv4AndIPv6Only(t *testing.T) {
 	}
 }
 
+func TestParseLoopbackHealthURLAllowsDefaultHTTPSPort(t *testing.T) {
+	for _, healthURL := range []string{
+		"https://127.0.0.1/api/version",
+		"https://127.0.0.1:443/api/version",
+		"https://[::1]/api/version",
+		"https://[::1]:443/api/version",
+	} {
+		if _, err := parseLoopbackHealthURL(healthURL, "https"); err != nil {
+			t.Fatalf("default HTTPS loopback URL %q was rejected: %v", healthURL, err)
+		}
+	}
+}
+
+func TestLoopbackHealthRedirectAllowsDefaultHTTPSPort(t *testing.T) {
+	redirect := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, "https://127.0.0.1/api/version", http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+	healthURL := redirect.URL + "/api/version"
+	client, err := newLoopbackHealthClient(healthURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Get(healthURL)
+	if err != nil {
+		if strings.Contains(err.Error(), "explicit port") {
+			t.Fatalf("health check still rejected default HTTPS port 443: %v", err)
+		}
+		return
+	}
+	response.Body.Close()
+}
+
 func TestWaitForHealthyRequiresExactHash(t *testing.T) {
 	server := newVersionServer(t, testHealthVersion, "ABC1234")
 	defer server.Close()
