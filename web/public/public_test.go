@@ -279,6 +279,9 @@ func TestRenderSystemApplicationIdentityLeavesRuntimeTitleOwnershipToReact(t *te
 	if strings.Contains(got, `content="black-translucent"`) {
 		t.Fatalf("system document kept a translucent status bar: %q", got)
 	}
+	if !strings.Contains(got, systemServiceWorkerCleanupMarker) {
+		t.Fatalf("system document is missing service worker cleanup: %q", got)
+	}
 }
 
 func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
@@ -354,6 +357,13 @@ func TestCustomHTMLIsLimitedToPublicPages(t *testing.T) {
 			}
 		} else if strings.Contains(body, documentTitleSyncMarker) || strings.Contains(body, publicThemeColorSyncMarker) {
 			t.Fatalf("GET %s private system document contains a public-page synchronizer", tt.path)
+		}
+		if isPrivateApplicationPath(tt.path) {
+			if !strings.Contains(body, systemServiceWorkerCleanupMarker) {
+				t.Fatalf("GET %s private document is missing service worker cleanup", tt.path)
+			}
+		} else if strings.Contains(body, systemServiceWorkerCleanupMarker) {
+			t.Fatalf("GET %s public document must not unregister service workers", tt.path)
 		}
 		if got := recorder.Header().Get("Cache-Control"); isPrivateApplicationPath(tt.path) {
 			if got != "no-store, private" {
@@ -434,6 +444,76 @@ func TestLegacyAdminDashboardRedirectsToAdmin(t *testing.T) {
 	}
 	if location := recorder.Header().Get("Location"); location != "/admin?from=theme" {
 		t.Fatalf("Location = %q, want /admin?from=theme", location)
+	}
+}
+
+func TestVendoredLegacyAdminAppRedirectsToAdmin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.SetDb(db)
+	themeDir := filepath.Join("data", "theme", "lite-theme", "dist", "admin-app")
+	if err := os.MkdirAll(filepath.Join(themeDir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(themeDir, "index.html"), []byte("vendored-komari-admin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(themeDir, "assets", "app.js"), []byte("vendored-admin-js"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("data", "theme", "lite-theme", "dist", "index.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("data", "theme", "lite-theme", "Lite-theme.json"), []byte(`{"name":"lite-theme"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Set(config.ThemeKey, "lite-theme"); err != nil {
+		t.Fatal(err)
+	}
+
+	router := gin.New()
+	Static(router.Group("/"), router.NoRoute)
+
+	for _, requestPath := range []string{"/admin-app", "/admin-app/", "/admin-app/index.html"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if recorder.Code != http.StatusFound {
+			t.Fatalf("GET %s status = %d, want %d", requestPath, recorder.Code, http.StatusFound)
+		}
+		if location := recorder.Header().Get("Location"); location != "/admin" {
+			t.Fatalf("GET %s Location = %q, want /admin", requestPath, location)
+		}
+		if body := recorder.Body.String(); strings.Contains(body, "vendored-komari-admin") {
+			t.Fatalf("GET %s served vendored admin HTML", requestPath)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin-app/assets/app.js", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("GET /admin-app/assets/app.js status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+	if recorder.Body.String() == "vendored-admin-js" {
+		t.Fatal("theme must not serve vendored admin scripts")
+	}
+}
+
+func TestVendoredLegacyAdminAppPathDetection(t *testing.T) {
+	if !isVendoredLegacyAdminAppPath("/admin-app") || !isVendoredLegacyAdminAppPath("/admin-app/index.html") {
+		t.Fatal("admin-app paths must be recognized")
+	}
+	if isVendoredLegacyAdminAppPath("/admin") || isVendoredLegacyAdminAppPath("/administrator") {
+		t.Fatal("normal admin paths must not be treated as vendored admin-app")
+	}
+	if !isVendoredLegacyAdminAppDocument("/admin-app") || !isVendoredLegacyAdminAppDocument("/admin-app/index.html") {
+		t.Fatal("admin-app documents must redirect")
+	}
+	if isVendoredLegacyAdminAppDocument("/admin-app/assets/app.js") {
+		t.Fatal("admin-app scripts must not redirect to /admin")
 	}
 }
 
