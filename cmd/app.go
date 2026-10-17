@@ -135,9 +135,6 @@ func (a *App) Bootstrap() error {
 	if err := normalizeSiteFactoryDefaults(); err != nil {
 		return fmt.Errorf("failed to normalize site factory defaults: %w", err)
 	}
-	if err := migrateLegacySiteDescription(); err != nil {
-		return fmt.Errorf("failed to migrate site description: %w", err)
-	}
 	if err := migrateAllowRemoteManagement(); err != nil {
 		return fmt.Errorf("failed to migrate remote management setting: %w", err)
 	}
@@ -176,27 +173,12 @@ func normalizeSiteFactoryDefaults() error {
 	}
 	migrated, _ := all[config.SiteFactoryDefaultsKey].(bool)
 	if !migrated {
-		if description, ok := all[config.DescriptionKey].(string); ok && config.IsLegacyDefaultDescription(description) {
-			updates[config.DescriptionKey] = config.DefaultSiteDescription
-		}
 		if pageSize, ok := configValueAsInt(all[config.AdminDefaultPageSizeKey]); ok && pageSize == 10 {
 			updates[config.AdminDefaultPageSizeKey] = config.AdminDefaultPageSize
 		}
 		updates[config.SiteFactoryDefaultsKey] = true
 	}
 	return config.SetMany(updates)
-}
-
-func migrateLegacySiteDescription() error {
-	all, err := config.GetAll()
-	if err != nil {
-		return err
-	}
-	description, ok := all[config.DescriptionKey].(string)
-	if !ok || !config.IsLegacyDefaultDescription(description) {
-		return nil
-	}
-	return config.Set(config.DescriptionKey, config.DefaultSiteDescription)
 }
 
 // migrateAllowRemoteManagement keeps remote management on for existing

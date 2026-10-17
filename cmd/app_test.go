@@ -319,8 +319,8 @@ func TestNormalizeSiteFactoryDefaultsMigratesLegacyValuesOnce(t *testing.T) {
 		t.Fatalf("normalize site factory defaults: %v", err)
 	}
 	description, err := config.GetAs[string](config.DescriptionKey)
-	if err != nil || description != config.DefaultSiteDescription {
-		t.Fatalf("description = %q, err %v; want %q", description, err, config.DefaultSiteDescription)
+	if err != nil || description != "A simple server monitor tool." {
+		t.Fatalf("description = %q, err %v; want existing value left unchanged", description, err)
 	}
 	pageSize, err := config.GetAs[int](config.AdminDefaultPageSizeKey)
 	if err != nil || pageSize != config.AdminDefaultPageSize {
@@ -349,8 +349,8 @@ func TestNormalizeSiteFactoryDefaultsMigratesLegacyValuesOnce(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacySiteDescriptionUpdatesOldDefault(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:migrate-legacy-site-description?mode=memory&cache=shared"), &gorm.Config{})
+func TestNormalizeSiteFactoryDefaultsLeavesExistingDescription(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:leave-existing-site-description?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open config database: %v", err)
 	}
@@ -359,24 +359,14 @@ func TestMigrateLegacySiteDescriptionUpdatesOldDefault(t *testing.T) {
 		config.DescriptionKey:         "All your servers, one simple view.",
 		config.SiteFactoryDefaultsKey: true,
 	}); err != nil {
-		t.Fatalf("seed previous default description: %v", err)
+		t.Fatalf("seed existing description: %v", err)
 	}
-	if err := migrateLegacySiteDescription(); err != nil {
-		t.Fatalf("migrate legacy site description: %v", err)
+	if err := normalizeSiteFactoryDefaults(); err != nil {
+		t.Fatalf("normalize site factory defaults: %v", err)
 	}
 	description, err := config.GetAs[string](config.DescriptionKey)
-	if err != nil || description != config.DefaultSiteDescription {
-		t.Fatalf("description = %q, err %v; want %q", description, err, config.DefaultSiteDescription)
-	}
-	if err := config.Set(config.DescriptionKey, "Custom description"); err != nil {
-		t.Fatalf("set custom description: %v", err)
-	}
-	if err := migrateLegacySiteDescription(); err != nil {
-		t.Fatalf("migrate custom description: %v", err)
-	}
-	description, err = config.GetAs[string](config.DescriptionKey)
-	if err != nil || description != "Custom description" {
-		t.Fatalf("custom description overwritten: %q, err %v", description, err)
+	if err != nil || description != "All your servers, one simple view." {
+		t.Fatalf("description = %q, err %v; want existing value left unchanged", description, err)
 	}
 }
 

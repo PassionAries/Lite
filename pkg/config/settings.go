@@ -1,7 +1,6 @@
 package config
 
 import (
-	"strings"
 	"time"
 )
 
@@ -67,17 +66,6 @@ type Settings struct {
 	TrafficReminderStep        float64 `json:"traffic_reminder_step" default:"5"`          // 达到起始比例后，每增加多少个百分点再提醒
 	TrafficReportTime          string  `json:"traffic_report_time" default:"00:00"`        // 流量日报/周报/月报发送时间（北京时间）
 	UpdatedAt                  time.Time
-}
-
-func IsLegacyDefaultDescription(value string) bool {
-	switch strings.TrimSpace(value) {
-	case "A simple server monitor tool.",
-		"Lite, a simple server monitoring tool.",
-		"All your servers, one simple view.":
-		return true
-	default:
-		return false
-	}
 }
 
 const (
