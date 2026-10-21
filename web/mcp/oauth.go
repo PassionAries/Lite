@@ -568,7 +568,7 @@ func handleAuthorizationCode(c *gin.Context, values url.Values) {
 	now := time.Now().UTC()
 	var token models.MCPToken
 	if err := database().Where("hash = ? AND kind = ?", hashToken(code), kindCode).First(&token).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+		writeAuthorizationCodeError(c, err)
 		return
 	}
 	if token.Used || !token.ExpiresAt.After(now) || token.ClientID != clientID || token.RedirectURI != redirectURI {
@@ -585,16 +585,81 @@ func handleAuthorizationCode(c *gin.Context, values url.Values) {
 	}
 	lease, err := loadLiveLease(token.LeaseID, now)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant"})
+		writeAuthorizationCodeError(c, err)
 		return
 	}
-	_ = database().Model(&token).Update("used", true).Error
-	pair, err := issueTokenPair(lease, token.ClientID, token.RedirectURI, token.Resource, now)
+	// Redemption is the only place that turns an authorization code into
+	// credentials, so it has to be atomic: consume the code, re-read the lease
+	// and persist both tokens inside one transaction. Concurrent requests for the
+	// same code can then only win once (RFC 6749 §4.1.2), and a failed insert no
+	// longer leaves a burned code with no credentials behind it.
+	pair, err := redeemAuthorizationCode(lease, token.Hash, token.ClientID, token.RedirectURI, token.Resource, now)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		writeAuthorizationCodeError(c, err)
 		return
 	}
 	writeTokenResponse(c, pair)
+}
+
+func writeAuthorizationCodeError(c *gin.Context, err error) {
+	status, code := http.StatusInternalServerError, "server_error"
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errCodeNotRedeemable) || errors.Is(err, ErrLeaseInactive) {
+		status, code = http.StatusBadRequest, "invalid_grant"
+	}
+	c.JSON(status, gin.H{"error": code})
+}
+
+// errCodeNotRedeemable includes consumed, missing, expired and incorrectly bound codes.
+var errCodeNotRedeemable = errors.New("authorization code is not redeemable")
+
+// redeemAuthorizationCode consumes the authorization code and issues its token
+// pair in a single transaction. The code row is updated conditionally so exactly
+// one caller can win the race, and the lease is re-read inside the transaction so
+// a revocation that lands after the caller's snapshot still wins.
+//
+// Only tx-scoped handles are used inside the transaction: the SQLite pool can
+// hold a single connection, so a helper reaching for the global handle while a
+// transaction is open would block until that transaction ended.
+func redeemAuthorizationCode(lease models.MCPLease, codeHash, clientID, redirectURI, resource string, now time.Time) (tokenPair, error) {
+	var pair tokenPair
+	err := database().Transaction(func(tx *gorm.DB) error {
+		// Refresh the precheck timestamp only after acquiring the transaction.
+		now = tx.NowFunc().UTC()
+		consumed := tx.Model(&models.MCPToken{}).
+			Where(`hash = ? AND kind = ? AND used = ? AND expires_at > ?
+				AND lease_id = ? AND family_id = ? AND client_id = ?`,
+				codeHash, kindCode, false, now, lease.ID, lease.TokenFamilyID, clientID).
+			Update("used", true)
+		if consumed.Error != nil {
+			return consumed.Error
+		}
+		if consumed.RowsAffected != 1 {
+			return errCodeNotRedeemable
+		}
+		var live models.MCPLease
+		if err := tx.Where("id = ?", lease.ID).First(&live).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrLeaseInactive
+			}
+			return err
+		}
+		if !leaseLive(live, now) {
+			return ErrLeaseInactive
+		}
+		if live.OAuthClientID != clientID || live.TokenFamilyID != lease.TokenFamilyID {
+			return errCodeNotRedeemable
+		}
+		issued, err := issueTokenPairInDB(tx, live, clientID, redirectURI, resource, now)
+		if err != nil {
+			return err
+		}
+		pair = issued
+		return nil
+	})
+	if err != nil {
+		return tokenPair{}, err
+	}
+	return pair, nil
 }
 
 func handleRefreshToken(c *gin.Context, values url.Values) {
