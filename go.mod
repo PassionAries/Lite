@@ -1,6 +1,6 @@
 module github.com/nuomiiiii/lite
 
-go 1.26.8
+go 1.26.10
 
 require (
 	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6

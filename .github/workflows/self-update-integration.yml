@@ -32,14 +32,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.8"
+          go-version: "1.26.10"
           check-latest: false
 
-      - name: Confirm Go 1.26.8
+      - name: Confirm Go 1.26.10
         run: |
           set -euo pipefail
           go version
-          test "$(go env GOVERSION)" = "go1.26.8"
+          test "$(go env GOVERSION)" = "go1.26.10"
           echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
 
       - name: Install Zig
