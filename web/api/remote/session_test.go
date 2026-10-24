@@ -131,6 +131,28 @@ func TestRemoteHeartbeatIsConsumedByServer(t *testing.T) {
 	}
 }
 
+func TestRecentTerminalTrafficSkipsProtocolPing(t *testing.T) {
+	now := time.Now()
+	if !remoteHasRecentTraffic(now.Add(-time.Second), now) {
+		t.Fatal("a session that just forwarded output was treated as idle")
+	}
+	if remoteHasRecentTraffic(now.Add(-remotePingInterval-time.Second), now) {
+		t.Fatal("a quiet session was treated as busy enough to skip keepalive pings")
+	}
+	if remoteHasRecentTraffic(time.Time{}, now) {
+		t.Fatal("a session with no activity skipped keepalive pings")
+	}
+}
+
+func TestProtocolPingWriteTimeoutDoesNotEndRemoteSession(t *testing.T) {
+	if pingWriteErrorEndsSession(errors.New("websocket: write timeout")) {
+		t.Fatal("a blocked ping write tore down a live remote session")
+	}
+	if pingWriteErrorEndsSession(nil) {
+		t.Fatal("a successful ping was treated as a session error")
+	}
+}
+
 func TestMCPSessionFollowsAuthorizationExpiry(t *testing.T) {
 	now := time.Now()
 	fresh := &remoteSession{
@@ -164,6 +186,12 @@ func TestRemoteSessionLimits(t *testing.T) {
 	}
 	if remotePingInterval != 15*time.Second {
 		t.Fatalf("remote ping interval is %s, want 15s", remotePingInterval)
+	}
+	if remotePingWriteTimeout != 5*time.Second {
+		t.Fatalf("remote ping write timeout is %s, want 5s", remotePingWriteTimeout)
+	}
+	if remotePingWriteTimeout >= remotePingInterval {
+		t.Fatal("ping write timeout must stay shorter than the ping interval")
 	}
 	if remoteMaxDuration != 6*time.Hour {
 		t.Fatalf("remote max duration is %s, want 6h", remoteMaxDuration)

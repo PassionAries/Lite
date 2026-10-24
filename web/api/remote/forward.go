@@ -81,12 +81,14 @@ func forwardSession(session *remoteSession) {
 				waiting = false
 				continue
 			}
-			deadline := now.Add(5 * time.Second)
-			if err := browser.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+			if remoteHasRecentTraffic(session.lastActivityAt(), now) {
+				continue
+			}
+			if err := writeRemotePing(browser, now); pingWriteErrorEndsSession(err) {
 				waiting = false
 				continue
 			}
-			if err := agent.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+			if err := writeRemotePing(agent, now); pingWriteErrorEndsSession(err) {
 				waiting = false
 			}
 		}

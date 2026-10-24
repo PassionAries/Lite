@@ -17,6 +17,7 @@ const (
 	pendingSessionTTL         = 45 * time.Second
 	remoteIdleTimeout         = 30 * time.Minute
 	remotePingInterval        = 15 * time.Second
+	remotePingWriteTimeout    = 5 * time.Second
 	remoteMaxDuration         = 6 * time.Hour
 	remoteReadLimit           = 2 << 20
 	maxRemoteSessions         = 64

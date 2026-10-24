@@ -235,8 +235,10 @@ func forwardMCPSession(session *remoteSession) {
 				waiting = false
 				continue
 			}
-			deadline := now.Add(5 * time.Second)
-			if err := agent.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+			if remoteHasRecentTraffic(session.lastActivityAt(), now) {
+				continue
+			}
+			if err := writeRemotePing(agent, now); pingWriteErrorEndsSession(err) {
 				waiting = false
 			}
 		}
